@@ -2,8 +2,8 @@
 
 FastAPI service for NFL statistics data operations. Called by the Go backend.
 
-## Run locally
+## Setup (local dev)
 
 ```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 3142
+uv sync
+uv run uvicorn app.main:app --reload --port 8000

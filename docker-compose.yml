@@ -1,0 +1,51 @@
+services:
+  go-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3141:3141"
+    depends_on:
+      - python-service
+      - postgres
+      - rabbitmq
+    environment:
+      - PYTHON_SERVICE_URL=http://python-service:3142
+      - DATABASE_URL=postgres://appuser:apppass@postgres:5432/nflstats?sslmode=disable
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+  python-service:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    ports:
+      - "3142:3142"
+    depends_on:
+      - postgres
+      - rabbitmq
+    environment:
+      - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/nflstats
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=appuser
+      - POSTGRES_PASSWORD=apppass
+      - POSTGRES_DB=nflstats
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
+volumes:
+  pgdata:
