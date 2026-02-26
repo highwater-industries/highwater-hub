@@ -22,5 +22,16 @@
 .DS_Store
 Thumbs.db
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Go workspace
 vendor/
+
+# Frontend build artifacts (generated from web/)
+internal/frontend/dist/
+web/node_modules/
+web/build/
+web/.svelte-kit/

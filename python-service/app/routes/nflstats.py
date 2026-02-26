@@ -1,25 +1,122 @@
-"""
-NFL Stats routes.
+"""NFL Stats routes.
 
 Endpoints for triggering and monitoring NFL statistics import jobs.
+
+``POST /import`` dispatches a Celery task to a background worker and
+returns a job ID immediately (HTTP 202 Accepted).  The Go server can
+then poll ``GET /jobs/{job_id}`` until the job completes.
 """
-from fastapi import APIRouter
+
+import logging
+
+from fastapi import APIRouter, HTTPException
+
+from app.data_collectors import CollectorFactory
+from app.schemas.nflstats import (
+    ErrorOut,
+    ImportAccepted,
+    ImportRequest,
+    JobStatus,
+)
+from app.tasks.import_task import run_import
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.post("/import")
-async def start_import():
-    """Kick off an NFL stats import job.
+@router.post(
+    "/import",
+    response_model=ImportAccepted,
+    status_code=202,
+    responses={400: {"model": ErrorOut}},
+)
+async def start_import(body: ImportRequest):
+    """Dispatch an NFL stats import job to the Celery worker.
 
-    Returns a job ID immediately. The actual import runs async.
+    Returns a ``job_id`` immediately.  Use ``GET /jobs/{job_id}``
+    to poll for progress and results.
     """
-    # TODO: dispatch Celery task, return job ID
-    return {"job_id": "not-yet-implemented", "status": "accepted"}
+    logger.info(
+        "Import requested: collector=%s seasons=%s strategy=%s",
+        body.collector_type.value,
+        body.seasons,
+        body.strategy.value,
+    )
+
+    # Validate that the collector type is registered before dispatching
+    if body.collector_type.value not in CollectorFactory.get_available_types():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown collector type: '{body.collector_type.value}'. "
+                   f"Available: {', '.join(CollectorFactory.get_available_types())}",
+        )
+
+    # Dispatch to Celery — returns immediately
+    task = run_import.delay(
+        collector_type=body.collector_type.value,
+        seasons=body.seasons,
+        strategy=body.strategy.value,
+    )
+
+    logger.info("Dispatched import task %s", task.id)
+    return ImportAccepted(
+        job_id=task.id,
+        status="accepted",
+        collector_type=body.collector_type.value,
+        seasons=body.seasons,
+        strategy=body.strategy.value,
+    )
 
 
-@router.get("/jobs/{job_id}")
+@router.get(
+    "/jobs/{job_id}",
+    response_model=JobStatus,
+    responses={404: {"model": ErrorOut}},
+)
 async def get_job_status(job_id: str):
-    """Check the status of an import job."""
-    # TODO: look up job status from Postgres
-    return {"job_id": job_id, "status": "unknown"}
+    """Poll the status of a previously dispatched import job.
+
+    Possible states:
+    - **PENDING** – task is queued but hasn't started yet.
+    - **PROGRESS** – task is running; ``meta`` contains progress info.
+    - **SUCCESS** – task finished; ``result`` holds the collected data.
+    - **FAILURE** – task raised an exception; ``error`` has details.
+    """
+    result = run_import.AsyncResult(job_id)
+
+    if result.state == "PENDING":
+        return JobStatus(
+            job_id=job_id,
+            status="pending",
+        )
+
+    if result.state == "PROGRESS":
+        meta = result.info or {}
+        return JobStatus(
+            job_id=job_id,
+            status="progress",
+            progress=meta.get("progress"),
+            meta=meta,
+        )
+
+    if result.state == "SUCCESS":
+        return JobStatus(
+            job_id=job_id,
+            status="completed",
+            result=result.result,
+        )
+
+    if result.state == "FAILURE":
+        return JobStatus(
+            job_id=job_id,
+            status="failed",
+            error=str(result.result),
+        )
+
+    # Catch-all for unexpected Celery states
+    return JobStatus(
+        job_id=job_id,
+        status=result.state.lower(),
+        meta=result.info if isinstance(result.info, dict) else None,
+    )

@@ -27,6 +27,18 @@ services:
       - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/nflstats
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 
+  celery-worker:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    command: ["uv", "run", "celery", "-A", "app.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    depends_on:
+      - rabbitmq
+      - postgres
+    environment:
+      - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/nflstats
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
   postgres:
     image: postgres:16-alpine
     ports:
