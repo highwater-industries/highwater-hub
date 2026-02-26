@@ -59,13 +59,15 @@ func (s *PostgresStore) List(ctx context.Context, filter PlayerFilter, offset, l
 	}
 
 	// 2. Fetch the page
+	orderBy := buildPlayerOrderBy(filter.Sort, filter.Order)
+
 	querySQL := fmt.Sprintf(
 		`SELECT id, player_id, player_name, team, player_position,
                 source, metadata, created_at, updated_at
          FROM players%s
-         ORDER BY player_name ASC
+         %s
          LIMIT $%d OFFSET $%d`,
-		where, len(args)+1, len(args)+2,
+		where, orderBy, len(args)+1, len(args)+2,
 	)
 	args = append(args, limit, offset)
 
@@ -188,4 +190,21 @@ func scanPlayerRow(rows *sql.Rows) (Player, error) {
 	}
 
 	return p, nil
+}
+
+var validPlayerSortColumns = map[string]bool{
+	"player_name":     true,
+	"team":            true,
+	"player_position": true,
+}
+
+func buildPlayerOrderBy(sort, order string) string {
+	if sort != "" && validPlayerSortColumns[sort] {
+		dir := "ASC"
+		if order == "desc" {
+			dir = "DESC"
+		}
+		return " ORDER BY " + sort + " " + dir + " NULLS LAST"
+	}
+	return " ORDER BY player_name ASC"
 }

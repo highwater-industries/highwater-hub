@@ -19,7 +19,15 @@ from sqlalchemy import delete, select
 from app.celery_app import celery_app
 from app.data_collectors import CollectorFactory
 from app.database import SyncSession, create_tables_sync
-from app.models.models import CollectionHistory, PlayerDB
+from app.models.models import (
+    CollectionHistory,
+    FantasyRanking,
+    Game,
+    PlayerAlias,
+    PlayerDB,
+    PlayerStat,
+)
+from app.player_resolver import PlayerResolver
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +124,263 @@ def _persist_players(
 
         session.commit()
 
+    # Seed aliases from newly imported roster data
+    try:
+        with SyncSession() as session:
+            resolver = PlayerResolver(session)
+            seeded = resolver.seed_from_roster()
+            if seeded:
+                logger.info("Seeded %d aliases from roster import", seeded)
+    except Exception as exc:
+        logger.warning("Failed to seed aliases: %s", exc)
+
     return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+
+def _persist_stats(
+    stats: List[Dict[str, Any]],
+    strategy: str,
+    collector_type: str,
+) -> Dict[str, int]:
+    """Write collected stat dicts to the ``player_stats`` table."""
+    inserted = updated = skipped = 0
+
+    with SyncSession() as session:
+        if strategy == "replace":
+            session.execute(
+                delete(PlayerStat).where(PlayerStat.source == collector_type)
+            )
+            session.flush()
+
+        for s in stats:
+            if strategy == "dry_run":
+                skipped += 1
+                continue
+
+            pid = s.get("player_id")
+            season = s.get("season")
+            week = s.get("week", 0)
+            stat_type = s.get("stat_type", "actual")
+            source = s.get("source", collector_type)
+
+            # Skip rows with no player_id (team aggregates / unknown players)
+            if not pid:
+                skipped += 1
+                continue
+
+            existing = None
+            if pid and season is not None and strategy == "merge":
+                existing = session.execute(
+                    select(PlayerStat).where(
+                        PlayerStat.player_id == pid,
+                        PlayerStat.season == season,
+                        PlayerStat.week == week,
+                        PlayerStat.stat_type == stat_type,
+                        PlayerStat.source == source,
+                    )
+                ).scalar_one_or_none()
+
+            if existing:
+                for col in (
+                    "player_name", "player_display_name", "position",
+                    "position_group", "team", "season_type", "opponent_team",
+                    "completions", "attempts", "passing_yards", "passing_tds",
+                    "interceptions", "sacks", "sack_yards", "passing_air_yards",
+                    "passing_yards_after_catch", "passing_2pt_conversions",
+                    "carries", "rushing_yards", "rushing_tds", "rushing_fumbles",
+                    "rushing_fumbles_lost", "rushing_2pt_conversions",
+                    "receptions", "targets", "receiving_yards", "receiving_tds",
+                    "receiving_fumbles", "receiving_fumbles_lost",
+                    "receiving_air_yards", "receiving_yards_after_catch",
+                    "receiving_2pt_conversions",
+                    "fantasy_points", "fantasy_points_ppr", "special_teams_tds",
+                ):
+                    if s.get(col) is not None:
+                        setattr(existing, col, s[col])
+                updated += 1
+            else:
+                session.add(PlayerStat(
+                    player_id=pid,
+                    player_name=s.get("player_name", ""),
+                    player_display_name=s.get("player_display_name"),
+                    position=s.get("position"),
+                    position_group=s.get("position_group"),
+                    team=s.get("team"),
+                    season=season,
+                    week=week,
+                    stat_type=stat_type,
+                    season_type=s.get("season_type"),
+                    opponent_team=s.get("opponent_team"),
+                    completions=s.get("completions"),
+                    attempts=s.get("attempts"),
+                    passing_yards=s.get("passing_yards"),
+                    passing_tds=s.get("passing_tds"),
+                    interceptions=s.get("interceptions"),
+                    sacks=s.get("sacks"),
+                    sack_yards=s.get("sack_yards"),
+                    passing_air_yards=s.get("passing_air_yards"),
+                    passing_yards_after_catch=s.get("passing_yards_after_catch"),
+                    passing_2pt_conversions=s.get("passing_2pt_conversions"),
+                    carries=s.get("carries"),
+                    rushing_yards=s.get("rushing_yards"),
+                    rushing_tds=s.get("rushing_tds"),
+                    rushing_fumbles=s.get("rushing_fumbles"),
+                    rushing_fumbles_lost=s.get("rushing_fumbles_lost"),
+                    rushing_2pt_conversions=s.get("rushing_2pt_conversions"),
+                    receptions=s.get("receptions"),
+                    targets=s.get("targets"),
+                    receiving_yards=s.get("receiving_yards"),
+                    receiving_tds=s.get("receiving_tds"),
+                    receiving_fumbles=s.get("receiving_fumbles"),
+                    receiving_fumbles_lost=s.get("receiving_fumbles_lost"),
+                    receiving_air_yards=s.get("receiving_air_yards"),
+                    receiving_yards_after_catch=s.get("receiving_yards_after_catch"),
+                    receiving_2pt_conversions=s.get("receiving_2pt_conversions"),
+                    fantasy_points=s.get("fantasy_points"),
+                    fantasy_points_ppr=s.get("fantasy_points_ppr"),
+                    special_teams_tds=s.get("special_teams_tds"),
+                    source=s.get("source", collector_type),
+                ))
+                inserted += 1
+
+        session.commit()
+
+    return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+
+def _persist_games(
+    games: List[Dict[str, Any]],
+    strategy: str,
+    collector_type: str,
+) -> Dict[str, int]:
+    """Write collected game dicts to the ``games`` table."""
+    inserted = updated = skipped = 0
+
+    with SyncSession() as session:
+        if strategy == "replace":
+            session.execute(
+                delete(Game).where(Game.source == collector_type)
+            )
+            session.flush()
+
+        for g in games:
+            if strategy == "dry_run":
+                skipped += 1
+                continue
+
+            gid = g.get("game_id")
+
+            existing = None
+            if gid and strategy == "merge":
+                existing = session.execute(
+                    select(Game).where(Game.game_id == gid)
+                ).scalar_one_or_none()
+
+            if existing:
+                for col in (
+                    "season", "game_type", "week", "gameday", "weekday",
+                    "gametime", "away_team", "home_team", "away_score",
+                    "home_score", "result", "total", "spread_line",
+                    "total_line", "overtime", "location", "roof",
+                    "surface", "stadium",
+                ):
+                    if g.get(col) is not None:
+                        setattr(existing, col, g[col])
+                updated += 1
+            else:
+                session.add(Game(
+                    game_id=gid,
+                    season=g.get("season"),
+                    game_type=g.get("game_type"),
+                    week=g.get("week"),
+                    gameday=g.get("gameday"),
+                    weekday=g.get("weekday"),
+                    gametime=g.get("gametime"),
+                    away_team=g.get("away_team"),
+                    home_team=g.get("home_team"),
+                    away_score=g.get("away_score"),
+                    home_score=g.get("home_score"),
+                    result=g.get("result"),
+                    total=g.get("total"),
+                    spread_line=g.get("spread_line"),
+                    total_line=g.get("total_line"),
+                    overtime=g.get("overtime"),
+                    location=g.get("location"),
+                    roof=g.get("roof"),
+                    surface=g.get("surface"),
+                    stadium=g.get("stadium"),
+                    source=g.get("source", collector_type),
+                ))
+                inserted += 1
+
+        session.commit()
+
+    return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+
+def _persist_ff_rankings(
+    rankings: List[Dict[str, Any]],
+    strategy: str,
+    collector_type: str,
+) -> Dict[str, int]:
+    """Write collected ranking dicts to the ``fantasy_rankings`` table."""
+    inserted = updated = skipped = 0
+
+    with SyncSession() as session:
+        # Scope delete to matching source + rank_type (not wholesale nuke)
+        if strategy in ("replace", "merge"):
+            q = delete(FantasyRanking).where(FantasyRanking.source == collector_type)
+            session.execute(q)
+            session.flush()
+
+        # Create a resolver for name → player_id lookups
+        resolver = PlayerResolver(session)
+
+        for r in rankings:
+            if strategy == "dry_run":
+                skipped += 1
+                continue
+
+            # Try to resolve player_id if not already set
+            pid = r.get("player_id")
+            if not pid:
+                pid = resolver.resolve(
+                    name=r.get("player_name", ""),
+                    team=r.get("team"),
+                    source=collector_type,
+                )
+
+            session.add(FantasyRanking(
+                player_id=pid,
+                player_name=r.get("player_name", ""),
+                pos=r.get("pos"),
+                team=r.get("team"),
+                rank=r.get("rank"),
+                ecr=r.get("ecr"),
+                sd=r.get("sd"),
+                best=r.get("best"),
+                worst=r.get("worst"),
+                avg=r.get("avg"),
+                rank_type=r.get("rank_type"),
+                page_type=r.get("page_type"),
+                season=r.get("season", 0),
+                week=r.get("week", 0),
+                source=r.get("source", collector_type),
+            ))
+            inserted += 1
+
+        session.commit()
+
+    return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+
+# Map collector type → (persist_fn, data_key)
+_PERSIST_MAP: Dict[str, tuple] = {
+    "nflreadpy": (_persist_players, "players"),
+    "nflreadpy_stats": (_persist_stats, "stats"),
+    "nflreadpy_schedules": (_persist_games, "games"),
+    "nflreadpy_ff_rankings": (_persist_ff_rankings, "rankings"),
+}
 
 
 def _record_history(
@@ -161,6 +425,7 @@ def run_import(
     collector_type: str,
     seasons: List[int],
     strategy: str,
+    collector_kwargs: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Run the collector pipeline, persist results, and return a summary.
 
@@ -174,12 +439,18 @@ def run_import(
         NFL seasons to fetch.
     strategy : str
         Collection strategy: merge | replace | append | dry_run.
+    collector_kwargs : dict | None
+        Extra keyword arguments forwarded to the collector constructor
+        (e.g. ``summary_level``, ``rank_type``).
 
     Returns
     -------
     dict
         Summary of the import (counts, status, etc.).
     """
+    if collector_kwargs is None:
+        collector_kwargs = {}
+
     task_started = datetime.now(UTC)
 
     logger.info(
@@ -226,6 +497,7 @@ def run_import(
             collector_type,
             seasons=seasons,
             progress_callback=_progress,
+            **collector_kwargs,
         )
     except ValueError as exc:
         logger.error("Failed to create collector: %s", exc)
@@ -233,7 +505,7 @@ def run_import(
             collector_type=collector_type,
             status="failed",
             error_message=str(exc),
-            params={"seasons": seasons, "strategy": strategy},
+            params={"seasons": seasons, "strategy": strategy, **collector_kwargs},
             started_at=task_started,
         )
         return {"status": "failed", "error": str(exc)}
@@ -248,17 +520,21 @@ def run_import(
             collector_type=collector_type,
             status="failed",
             error_message=msg,
-            params={"seasons": seasons, "strategy": strategy},
+            params={"seasons": seasons, "strategy": strategy, **collector_kwargs},
             started_at=task_started,
         )
         return {"status": "failed", "error": msg}
 
-    # Persist collected players to the database
-    players: list[dict] = result.get("players", [])
-    counters = _persist_players(players, strategy, collector_type)
+    # Dispatch to the correct persist function
+    persist_fn, data_key = _PERSIST_MAP.get(
+        collector_type, (_persist_players, "players")
+    )
+    records: list[dict] = result.get(data_key, [])
+    counters = persist_fn(records, strategy, collector_type)
     logger.info(
-        "Persisted %d players: inserted=%d updated=%d skipped=%d",
-        len(players),
+        "Persisted %d %s: inserted=%d updated=%d skipped=%d",
+        len(records),
+        data_key,
         counters["inserted"],
         counters["updated"],
         counters["skipped"],
@@ -268,11 +544,11 @@ def run_import(
     _record_history(
         collector_type=collector_type,
         status="completed",
-        records_fetched=len(players),
+        records_fetched=len(records),
         records_inserted=counters["inserted"],
         records_updated=counters["updated"],
         records_skipped=counters["skipped"],
-        params={"seasons": seasons, "strategy": strategy},
+        params={"seasons": seasons, "strategy": strategy, **collector_kwargs},
         started_at=task_started,
     )
 
@@ -281,10 +557,9 @@ def run_import(
         "collector_type": collector_type,
         "seasons": result.get("seasons", seasons),
         "strategy": strategy,
-        "total_players": result.get("total_players", len(players)),
+        "total_records": len(records),
         "records_inserted": counters["inserted"],
         "records_updated": counters["updated"],
         "records_skipped": counters["skipped"],
-        # Return a small sample in the result payload
-        "players_sample": players[:20],
+        "sample": records[:20],
     }

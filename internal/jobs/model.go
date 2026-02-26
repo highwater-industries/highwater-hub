@@ -5,6 +5,8 @@ type ImportRequest struct {
 	CollectorType string `json:"collector_type"`
 	Seasons       []int  `json:"seasons"`
 	Strategy      string `json:"strategy"`
+	SummaryLevel  string `json:"summary_level,omitempty"`
+	RankType      string `json:"rank_type,omitempty"`
 }
 
 // ImportAccepted is the response from the Python service when a job is dispatched.
@@ -24,6 +26,26 @@ type JobStatus struct {
 	Meta     map[string]any `json:"meta,omitempty"`
 	Result   map[string]any `json:"result,omitempty"`
 	Error    *string        `json:"error,omitempty"`
+}
+
+// BatchImportRequest dispatches multiple imports at once.
+type BatchImportRequest struct {
+	Imports []ImportRequest `json:"imports"`
+}
+
+// BatchImportResult is one entry in the batch response.
+type BatchImportResult struct {
+	CollectorType string `json:"collector_type"`
+	JobID         string `json:"job_id,omitempty"`
+	Status        string `json:"status"`
+	Error         string `json:"error,omitempty"`
+}
+
+// BatchImportResponse is returned from POST /api/jobs/import/batch.
+type BatchImportResponse struct {
+	Results    []BatchImportResult `json:"results"`
+	Dispatched int                 `json:"dispatched"`
+	Failed     int                 `json:"failed"`
 }
 
 // JobRecord is a historical import run from the collection_history table.

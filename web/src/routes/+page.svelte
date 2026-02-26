@@ -34,7 +34,7 @@
 	<h1>// HOME BASE</h1>
 </div>
 
-<h4 style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); margin-bottom: 0.5rem">
+<h4 style="font-family: var(--font-pixel); font-size: 0.55rem; color: var(--text-muted); margin-bottom: 0.5rem">
 	MEDIA STACK
 </h4>
 <div class="services-grid">
@@ -48,7 +48,7 @@
 	{/each}
 </div>
 
-<h4 style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); margin: 1.25rem 0 0.5rem">
+<h4 style="font-family: var(--font-pixel); font-size: 0.55rem; color: var(--text-muted); margin: 1.25rem 0 0.5rem">
 	INFRASTRUCTURE
 </h4>
 <div class="services-grid">
@@ -111,7 +111,7 @@
 
 	.service-name {
 		font-family: var(--font-pixel);
-		font-size: 0.4rem;
+		font-size: 0.55rem;
 		color: var(--svc-color);
 		text-align: center;
 		line-height: 1.4;

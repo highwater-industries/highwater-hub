@@ -15,6 +15,9 @@ class CollectorType(str, Enum):
     """Supported data-collector types."""
 
     nflreadpy = "nflreadpy"
+    nflreadpy_stats = "nflreadpy_stats"
+    nflreadpy_schedules = "nflreadpy_schedules"
+    nflreadpy_ff_rankings = "nflreadpy_ff_rankings"
 
 
 class CollectionStrategy(str, Enum):
@@ -44,6 +47,14 @@ class ImportRequest(BaseModel):
     strategy: CollectionStrategy = Field(
         default=CollectionStrategy.merge,
         description="How to reconcile records: merge | replace | append | dry_run.",
+    )
+    summary_level: Optional[str] = Field(
+        default=None,
+        description="For nflreadpy_stats: week | season (default week).",
+    )
+    rank_type: Optional[str] = Field(
+        default=None,
+        description="For nflreadpy_ff_rankings: draft | week | all (default draft).",
     )
 
     model_config = {"json_schema_extra": {"examples": [{"seasons": [2024]}]}}

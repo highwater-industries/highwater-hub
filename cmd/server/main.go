@@ -53,14 +53,20 @@ func run(ctx context.Context) error {
 	userStore := user.NewMemoryStore()
 	jobsStore := jobs.NewPostgresStore(db)
 	playerStore := nflstats.NewPostgresStore(db)
+	statStore := nflstats.NewPostgresStatStore(db)
+	gameStore := nflstats.NewPostgresGameStore(db)
+	rankingStore := nflstats.NewPostgresRankingStore(db)
 
 	// ---- Server ----
 	srv := server.NewServer(server.Config{
-		Logger:      logger,
-		UserStore:   userStore,
-		JobsClient:  jobsClient,
-		JobsStore:   jobsStore,
-		PlayerStore: playerStore,
+		Logger:       logger,
+		UserStore:    userStore,
+		JobsClient:   jobsClient,
+		JobsStore:    jobsStore,
+		PlayerStore:  playerStore,
+		StatStore:    statStore,
+		GameStore:    gameStore,
+		RankingStore: rankingStore,
 	})
 
 	httpServer := &http.Server{

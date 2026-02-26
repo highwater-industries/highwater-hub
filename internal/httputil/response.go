@@ -3,41 +3,57 @@ package httputil
 import "strconv"
 
 type ListResponse[T any] struct {
-    Items  []T `json:"items"`
-    Total  int `json:"total"`
-    Offset int `json:"offset"`
-    Limit  int `json:"limit"`
+	Items  []T `json:"items"`
+	Total  int `json:"total"`
+	Offset int `json:"offset"`
+	Limit  int `json:"limit"`
 }
 
 type PaginationParams struct {
-    Offset int
-    Limit  int
+	Offset int
+	Limit  int
 }
 
 const DefaultLimit = 20
 const MaxLimit = 100
 
 func ParsePagination(offsetStr, limitStr string) PaginationParams {
-    offset := 0
-    limit := DefaultLimit
+	offset := 0
+	limit := DefaultLimit
 
-    if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
-        offset = v
-    }
-    if v, err := strconv.Atoi(limitStr); err == nil && v > 0 && v <= MaxLimit {
-        limit = v
-    }
+	if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
+		offset = v
+	}
+	if v, err := strconv.Atoi(limitStr); err == nil && v > 0 && v <= MaxLimit {
+		limit = v
+	}
 
-    return PaginationParams{Offset: offset, Limit: limit}
+	return PaginationParams{Offset: offset, Limit: limit}
 }
 
 type SingleResponse[T any] struct {
-    Data T `json:"data"`
+	Data T `json:"data"`
 }
 
 type ErrorResponse struct {
-    Error string  `json:"error"`
-    Code  string  `json:"code,omitempty"`
+	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
 }
 
+// ParseSort validates and returns a safe ORDER BY column and direction.
+// Returns (defaultSort, defaultOrder) when the input is empty or invalid.
+func ParseSort(sortStr, orderStr string, validColumns map[string]bool, defaultSort, defaultOrder string) (string, string) {
+	col := defaultSort
+	dir := defaultOrder
 
+	if sortStr != "" && validColumns[sortStr] {
+		col = sortStr
+	}
+	if orderStr == "asc" || orderStr == "ASC" {
+		dir = "ASC"
+	} else if orderStr == "desc" || orderStr == "DESC" {
+		dir = "DESC"
+	}
+
+	return col, dir
+}

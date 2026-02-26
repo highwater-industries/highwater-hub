@@ -32,7 +32,8 @@ body {
 	color: var(--text);
 	line-height: 1.6;
 	font-size: 18px;
-	image-rendering: pixelated;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 .app {
@@ -52,8 +53,8 @@ body {
 		0deg,
 		transparent,
 		transparent 2px,
-		rgba(0, 0, 0, 0.08) 2px,
-		rgba(0, 0, 0, 0.08) 4px
+		rgba(0, 0, 0, 0.03) 2px,
+		rgba(0, 0, 0, 0.03) 4px
 	);
 	pointer-events: none;
 	z-index: 9999;
@@ -86,9 +87,9 @@ body {
 
 .sidebar .logo h2 {
 	font-family: var(--font-pixel);
-	font-size: 0.65rem;
+	font-size: 0.75rem;
 	color: var(--accent);
-	text-shadow: 0 0 10px var(--accent-glow), 0 0 20px var(--accent-glow);
+	text-shadow: 0 0 8px var(--accent-glow);
 	letter-spacing: 2px;
 	line-height: 1.8;
 }
@@ -114,7 +115,7 @@ body {
 	color: var(--text-muted);
 	text-decoration: none;
 	font-family: var(--font-pixel);
-	font-size: 0.5rem;
+	font-size: 0.55rem;
 	letter-spacing: 1px;
 	transition: all 0.1s;
 	border-left: 4px solid transparent;
@@ -129,7 +130,7 @@ body {
 	color: var(--accent);
 	background: var(--surface-hover);
 	border-left: 4px solid var(--accent);
-	text-shadow: 0 0 8px var(--accent-glow);
+	text-shadow: 0 0 6px var(--accent-glow);
 }
 
 .sidebar .nav-icon {
@@ -159,7 +160,7 @@ body {
 
 .card h3 {
 	font-family: var(--font-pixel);
-	font-size: 0.45rem;
+	font-size: 0.5rem;
 	text-transform: uppercase;
 	letter-spacing: 2px;
 	color: var(--text-muted);
@@ -171,7 +172,7 @@ body {
 	font-size: 1.1rem;
 	font-weight: 400;
 	color: var(--accent);
-	text-shadow: 0 0 8px var(--accent-glow);
+	text-shadow: 0 0 6px var(--accent-glow);
 }
 
 /* ── Tables ── */
@@ -188,11 +189,27 @@ thead th {
 	color: var(--accent);
 	font-family: var(--font-pixel);
 	font-weight: 400;
-	font-size: 0.4rem;
+	font-size: 0.5rem;
 	text-transform: uppercase;
 	letter-spacing: 2px;
 	border-bottom: var(--pixel-border) solid var(--border);
 	background: var(--surface);
+}
+
+thead th.sortable {
+	cursor: pointer;
+	user-select: none;
+	transition: color 0.15s;
+}
+
+thead th.sortable:hover {
+	color: var(--primary);
+}
+
+.table-fetching {
+	opacity: 0.5;
+	pointer-events: none;
+	transition: opacity 0.15s;
 }
 
 tbody td {
@@ -210,7 +227,7 @@ tbody tr:hover {
 	display: inline-block;
 	padding: 0.2rem 0.5rem;
 	font-family: var(--font-pixel);
-	font-size: 0.4rem;
+	font-size: 0.45rem;
 	letter-spacing: 1px;
 	border: 2px solid;
 }
@@ -240,7 +257,7 @@ tbody tr:hover {
 button, .btn {
 	padding: 0.5rem 1rem;
 	font-family: var(--font-pixel);
-	font-size: 0.45rem;
+	font-size: 0.5rem;
 	letter-spacing: 1px;
 	cursor: pointer;
 	border: var(--pixel-border) solid var(--border);
@@ -316,10 +333,10 @@ select {
 
 .page-header h1 {
 	font-family: var(--font-pixel);
-	font-size: 0.8rem;
+	font-size: 0.85rem;
 	letter-spacing: 2px;
 	color: var(--accent);
-	text-shadow: 0 0 10px var(--accent-glow);
+	text-shadow: 0 0 8px var(--accent-glow);
 }
 
 /* ── Filters bar ── */

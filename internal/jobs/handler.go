@@ -31,6 +31,56 @@ func HandleStartImport(client *Client) http.HandlerFunc {
 	}
 }
 
+// HandleBatchImport dispatches multiple import jobs in one request.
+//
+//	POST /api/jobs/import/batch
+func HandleBatchImport(client *Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		req, err := httputil.Decode[BatchImportRequest](r)
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "invalid JSON",
+			})
+			return
+		}
+
+		if len(req.Imports) == 0 {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "imports array must not be empty",
+			})
+			return
+		}
+
+		var results []BatchImportResult
+		dispatched, failed := 0, 0
+
+		for _, imp := range req.Imports {
+			accepted, err := client.StartImport(r.Context(), imp)
+			if err != nil {
+				results = append(results, BatchImportResult{
+					CollectorType: imp.CollectorType,
+					Status:        "failed",
+					Error:         err.Error(),
+				})
+				failed++
+			} else {
+				results = append(results, BatchImportResult{
+					CollectorType: accepted.CollectorType,
+					JobID:         accepted.JobID,
+					Status:        "accepted",
+				})
+				dispatched++
+			}
+		}
+
+		httputil.Encode(w, http.StatusAccepted, BatchImportResponse{
+			Results:    results,
+			Dispatched: dispatched,
+			Failed:     failed,
+		})
+	}
+}
+
 // HandleGetJobStatus polls the Python service for a job's status.
 //
 //	GET /api/jobs/{job_id}

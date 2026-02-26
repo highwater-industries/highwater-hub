@@ -7,6 +7,9 @@
 	const navItems = [
 		{ href: '/', label: 'Home Base', icon: '⌂' },
 		{ href: '/players', label: 'Players', icon: '⚑' },
+		{ href: '/stats', label: 'Stats', icon: '📊' },
+		{ href: '/games', label: 'Games', icon: '🏈' },
+		{ href: '/rankings', label: 'Rankings', icon: '★' },
 		{ href: '/jobs', label: 'Jobs', icon: '⚙' }
 	];
 </script>

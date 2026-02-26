@@ -82,5 +82,8 @@ func parseFilter(r *http.Request) PlayerFilter {
 		f.Search = &v
 	}
 
+	f.Sort = r.URL.Query().Get("sort")
+	f.Order = r.URL.Query().Get("order")
+
 	return f
 }

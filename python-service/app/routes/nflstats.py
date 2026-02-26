@@ -52,11 +52,19 @@ async def start_import(body: ImportRequest):
                    f"Available: {', '.join(CollectorFactory.get_available_types())}",
         )
 
+    # Build optional collector kwargs
+    collector_kwargs: dict = {}
+    if body.summary_level is not None:
+        collector_kwargs["summary_level"] = body.summary_level
+    if body.rank_type is not None:
+        collector_kwargs["rank_type"] = body.rank_type
+
     # Dispatch to Celery — returns immediately
     task = run_import.delay(
         collector_type=body.collector_type.value,
         seasons=body.seasons,
         strategy=body.strategy.value,
+        collector_kwargs=collector_kwargs,
     )
 
     logger.info("Dispatched import task %s", task.id)
