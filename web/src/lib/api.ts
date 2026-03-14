@@ -101,6 +101,39 @@ export function getPlayer(id: number): Promise<{ data: Player }> {
 	return get(`/nflstats/players/${id}`);
 }
 
+// ── Player Summary ──
+
+export interface SeasonTotals {
+	season: number;
+	games_played: number;
+	completions?: number;
+	attempts?: number;
+	passing_yards?: number;
+	passing_tds?: number;
+	interceptions?: number;
+	carries?: number;
+	rushing_yards?: number;
+	rushing_tds?: number;
+	receptions?: number;
+	targets?: number;
+	receiving_yards?: number;
+	receiving_tds?: number;
+	fantasy_points?: number;
+	fantasy_points_ppr?: number;
+}
+
+export interface PlayerSummary {
+	player: Player;
+	career_totals: SeasonTotals;
+	seasons: SeasonTotals[];
+	recent_games: PlayerStat[];
+	rankings: FantasyRank[];
+}
+
+export function getPlayerSummary(id: number): Promise<PlayerSummary> {
+	return get(`/nflstats/players/${id}/summary`);
+}
+
 // ── Jobs ──
 
 export function listJobs(offset = 0, limit = 50): Promise<ListResponse<Job>> {
@@ -117,6 +150,10 @@ export interface JobSummary {
 
 export function getJobSummary(): Promise<JobSummary> {
 	return get('/jobs/summary');
+}
+
+export function cleanupStuckJobs(): Promise<{ cleaned: number }> {
+	return post('/jobs/cleanup');
 }
 
 export interface ImportOptions {
@@ -190,6 +227,7 @@ export async function fullImport(
 
 export interface PlayerStat {
 	id: number;
+	player_db_id?: number;
 	player_id?: string;
 	player_name: string;
 	player_display_name?: string;
@@ -198,6 +236,7 @@ export interface PlayerStat {
 	season: number;
 	week: number;
 	stat_type?: string;
+	opponent_team?: string;
 	completions?: number;
 	attempts?: number;
 	passing_yards?: number;
@@ -305,6 +344,7 @@ export function listGames(filter: GameFilter = {}): Promise<ListResponse<GameDat
 
 export interface FantasyRank {
 	id: number;
+	player_db_id?: number;
 	player_id?: string;
 	player_name: string;
 	pos?: string;
@@ -428,6 +468,15 @@ export interface ExerciseHistoryEntry {
 	sets: WorkoutSet[];
 }
 
+export interface ExerciseProgressCard {
+	exercise_id: number;
+	exercise_name: string;
+	exercise_category: string;
+	muscle_group?: string;
+	equipment?: string;
+	sessions: ExerciseHistoryEntry[];
+}
+
 // ── Fitness: Users ──
 
 export function listFitnessUsers(): Promise<FitnessUser[]> {
@@ -485,6 +534,10 @@ export function getExerciseHistory(
 	limit = 6
 ): Promise<ExerciseHistoryEntry[]> {
 	return get(`/fitness/exercises/${exerciseId}/history?user_id=${userId}&limit=${limit}`);
+}
+
+export function getUserProgress(userId: number, limit = 6): Promise<ExerciseProgressCard[]> {
+	return get(`/fitness/progress?user_id=${userId}&limit=${limit}`);
 }
 
 // ── Fitness: Workouts ──

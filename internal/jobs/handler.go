@@ -133,6 +133,25 @@ func HandleListJobs(store Store) http.HandlerFunc {
 	}
 }
 
+// HandleCleanupStuck marks stale running/pending jobs as failed.
+//
+//	POST /api/jobs/cleanup
+func HandleCleanupStuck(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		count, err := store.CleanupStuck(r.Context())
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to cleanup stuck jobs",
+			})
+			return
+		}
+
+		httputil.Encode(w, http.StatusOK, map[string]any{
+			"cleaned": count,
+		})
+	}
+}
+
 // HandleGetJobSummary returns aggregate status counts from collection_history.
 //
 //	GET /api/jobs/summary

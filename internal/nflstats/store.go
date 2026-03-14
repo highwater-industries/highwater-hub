@@ -48,6 +48,7 @@ type StatFilter struct {
 type StatStore interface {
 	ListStats(ctx context.Context, filter StatFilter, offset, limit int) ([]PlayerStat, int, error)
 	GetLeaders(ctx context.Context, stat string, season, week int, position string, limit int) ([]PlayerStat, error)
+	GetPlayerSummary(ctx context.Context, playerID int) (*PlayerSummary, error)
 }
 
 // --------------------------------------------------------------------------

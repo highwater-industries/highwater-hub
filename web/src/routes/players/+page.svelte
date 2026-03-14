@@ -165,7 +165,7 @@
 										</div>
 									{/if}
 									<div>
-										<div class="font-bold text-primary">{player.player_name}</div>
+										<a href="/players/{player.id}" class="font-bold text-primary hover:underline">{player.player_name}</a>
 										<div class="text-xs opacity-40">{player.player_id}</div>
 									</div>
 								</div>

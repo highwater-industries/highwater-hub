@@ -137,7 +137,10 @@
 </script>
 
 <div class="flex justify-between items-center mb-4">
-	<h1 class="text-xl md:text-2xl font-bold text-primary tracking-wide">// FITNESS</h1>
+	<div class="flex items-center gap-3">
+		<h1 class="text-xl md:text-2xl font-bold text-primary tracking-wide">// FITNESS</h1>
+		<a href="/fitness/progress" class="btn btn-ghost btn-sm text-xs tracking-wide">📊 Progress</a>
+	</div>
 	{#if activeUser}
 		<span class="text-xs md:text-sm opacity-60">{totalWorkouts} WORKOUTS</span>
 	{/if}

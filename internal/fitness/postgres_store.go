@@ -344,6 +344,69 @@ func (s *PostgresStore) GetExerciseHistory(ctx context.Context, exerciseID, user
 	return result, nil
 }
 
+// GetUserProgress returns progress cards for all exercises a user has performed
+// in completed workouts, each with the last N sessions of history.
+func (s *PostgresStore) GetUserProgress(ctx context.Context, userID, sessionLimit int) ([]ExerciseProgressCard, error) {
+	// 1. Find all exercises this user has performed, ordered by most recent.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.name, e.category, e.muscle_group, e.equipment
+		FROM exercises e
+		JOIN workout_exercises we ON we.exercise_id = e.id
+		JOIN workouts w ON w.id = we.workout_id
+		WHERE w.user_id = $1 AND w.completed_at IS NOT NULL
+		GROUP BY e.id
+		ORDER BY MAX(w.started_at) DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list progress exercises: %w", err)
+	}
+	defer rows.Close()
+
+	type exInfo struct {
+		ID       int
+		Name     string
+		Category string
+		Muscle   *string
+		Equip    *string
+	}
+	var exercises []exInfo
+	for rows.Next() {
+		var e exInfo
+		var mg, eq sql.NullString
+		if err := rows.Scan(&e.ID, &e.Name, &e.Category, &mg, &eq); err != nil {
+			return nil, fmt.Errorf("scan progress exercise: %w", err)
+		}
+		if mg.Valid {
+			e.Muscle = &mg.String
+		}
+		if eq.Valid {
+			e.Equip = &eq.String
+		}
+		exercises = append(exercises, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate progress exercises: %w", err)
+	}
+
+	// 2. For each exercise, fetch session history (reuse existing method).
+	cards := make([]ExerciseProgressCard, 0, len(exercises))
+	for _, e := range exercises {
+		sessions, err := s.GetExerciseHistory(ctx, e.ID, userID, sessionLimit)
+		if err != nil {
+			return nil, fmt.Errorf("progress history for exercise %d: %w", e.ID, err)
+		}
+		cards = append(cards, ExerciseProgressCard{
+			ExerciseID:       e.ID,
+			ExerciseName:     e.Name,
+			ExerciseCategory: e.Category,
+			MuscleGroup:      e.Muscle,
+			Equipment:        e.Equip,
+			Sessions:         sessions,
+		})
+	}
+	return cards, nil
+}
+
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------

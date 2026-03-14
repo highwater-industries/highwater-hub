@@ -26,6 +26,7 @@ type Store interface {
 	CreateExercise(ctx context.Context, name, category string, muscleGroup, equipment *string, userID *int) (Exercise, error)
 	ToggleFavorite(ctx context.Context, userID, exerciseID int) (bool, error)
 	GetExerciseHistory(ctx context.Context, exerciseID, userID, limit int) ([]ExerciseHistoryEntry, error)
+	GetUserProgress(ctx context.Context, userID, sessionLimit int) ([]ExerciseProgressCard, error)
 
 	// Workouts
 	ListWorkouts(ctx context.Context, userID int, offset, limit int) ([]WorkoutSummary, int, error)
@@ -42,6 +43,6 @@ type Store interface {
 
 	// Sets
 	AddSet(ctx context.Context, workoutExerciseID int, set WorkoutSet) (WorkoutSet, error)
-	UpdateSet(ctx context.Context, set WorkoutSet) error
+	UpdateSet(ctx context.Context, id int, fields map[string]interface{}) error
 	DeleteSet(ctx context.Context, id int) error
 }

@@ -64,6 +64,33 @@ func HandleGetPlayer(store Store) http.HandlerFunc {
 	}
 }
 
+// HandleGetPlayerSummary returns a full player profile with career stats,
+// season-by-season totals, recent game log, and fantasy rankings.
+//
+//	GET /api/nflstats/players/{id}/summary
+func HandleGetPlayerSummary(playerStore Store, statStore StatStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "invalid player id",
+			})
+			return
+		}
+
+		summary, err := statStore.GetPlayerSummary(r.Context(), id)
+		if err != nil {
+			httputil.Encode(w, http.StatusNotFound, httputil.ErrorResponse{
+				Error: "player not found",
+			})
+			return
+		}
+
+		httputil.Encode(w, http.StatusOK, summary)
+	}
+}
+
 // parseFilter extracts a PlayerFilter from URL query parameters.
 // Missing params result in nil fields (no filtering on that dimension).
 func parseFilter(r *http.Request) PlayerFilter {

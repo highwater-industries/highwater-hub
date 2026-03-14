@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { listJobs, listPlayers, startImport, batchImport, fullImport, getJobSummary, type Job, type JobSummary } from '$lib/api';
+	import { listJobs, listPlayers, startImport, batchImport, fullImport, getJobSummary, cleanupStuckJobs, type Job, type JobSummary } from '$lib/api';
 	import { SEASONS, COLLECTOR_TYPES, SUMMARY_LEVELS, RANK_TYPES, IMPORT_PRESETS } from '$lib/constants';
 
 	let jobs: Job[] = $state([]);
@@ -39,6 +39,7 @@
 	// Polling
 	let pollTimer: ReturnType<typeof setInterval> | null = $state(null);
 	let hasActiveJobs = $state(false);
+	let cleaningUp = $state(false);
 
 	let offset = $state(0);
 	const limit = 50;
@@ -100,6 +101,22 @@
 		if (pollTimer) {
 			clearInterval(pollTimer);
 			pollTimer = null;
+		}
+	}
+
+	async function cleanupStuck() {
+		cleaningUp = true;
+		try {
+			const res = await cleanupStuckJobs();
+			importMessage = res.cleaned > 0
+				? `Cleaned up ${res.cleaned} stuck job${res.cleaned > 1 ? 's' : ''}`
+				: 'No stuck jobs found';
+			await refreshJobs();
+		} catch (e) {
+			console.error('Failed to cleanup stuck jobs', e);
+			importMessage = 'Cleanup failed';
+		} finally {
+			cleaningUp = false;
 		}
 	}
 
@@ -250,6 +267,11 @@
 		{/if}
 		{#if importMessage}
 			<span class="text-xs text-success font-semibold">{importMessage}</span>
+		{/if}
+		{#if summary.running > 0 || summary.pending > 0}
+			<button class="btn btn-error btn-outline btn-sm" onclick={cleanupStuck} disabled={cleaningUp}>
+				{cleaningUp ? 'Cleaning...' : '🧹 Cleanup Stuck'}
+			</button>
 		{/if}
 		<button class="btn btn-primary btn-sm" onclick={() => showImportForm = !showImportForm}>
 			{showImportForm ? 'Cancel' : '+ New Import'}

@@ -132,3 +132,21 @@ func (s *PostgresStore) Summary(ctx context.Context) (JobSummary, error) {
 
 	return summary, nil
 }
+
+// CleanupStuck marks any jobs stuck in "running" or "pending" for over 1 hour
+// as "failed" and returns the count of affected rows.
+func (s *PostgresStore) CleanupStuck(ctx context.Context) (int, error) {
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE collection_history
+		 SET status = 'failed',
+		     error_message = 'Marked as failed: job was stuck',
+		     finished_at = NOW()
+		 WHERE status IN ('running', 'pending', 'started', 'STARTED')
+		   AND started_at < NOW() - INTERVAL '1 hour'`,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup stuck jobs: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}

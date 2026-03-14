@@ -196,7 +196,7 @@ leaderPosition || undefined,
 						{#each leaders as leader, i}
 							<tr class="hover">
 								<td class="font-bold text-primary">{i + 1}</td>
-								<td class="font-bold text-primary">{leader.player_name}</td>
+								<td class="font-bold text-primary">{#if leader.player_db_id}<a href="/players/{leader.player_db_id}" class="hover:underline">{leader.player_name}</a>{:else}{leader.player_name}{/if}</td>
 								<td>{leader.team ?? '—'}</td>
 								<td>{leader.position ?? '—'}</td>
 								<td class="text-right font-bold text-accent">
@@ -292,7 +292,7 @@ leaderPosition || undefined,
 					<tbody>
 						{#each stats as s}
 							<tr class="hover">
-								<td class="font-bold text-primary">{s.player_name}</td>
+								<td class="font-bold text-primary">{#if s.player_db_id}<a href="/players/{s.player_db_id}" class="hover:underline">{s.player_name}</a>{:else}{s.player_name}{/if}</td>
 								<td>{s.team ?? '—'}</td>
 								<td>{s.position ?? '—'}</td>
 								<td>{s.season}</td>

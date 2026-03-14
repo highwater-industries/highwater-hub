@@ -16,6 +16,7 @@ type Player struct {
 // PlayerStat represents a row from the player_stats table.
 type PlayerStat struct {
 	ID                       int      `json:"id"`
+	PlayerDbID               *int     `json:"player_db_id,omitempty"`
 	PlayerID                 *string  `json:"player_id,omitempty"`
 	PlayerName               string   `json:"player_name"`
 	PlayerDisplayName        *string  `json:"player_display_name,omitempty"`
@@ -86,9 +87,43 @@ type Game struct {
 	CreatedAt  string   `json:"created_at"`
 }
 
+// --------------------------------------------------------------------------
+// Player Summary (aggregated view for player detail page)
+// --------------------------------------------------------------------------
+
+// SeasonTotals holds aggregated stats for a single season.
+type SeasonTotals struct {
+	Season           int      `json:"season"`
+	GamesPlayed      int      `json:"games_played"`
+	Completions      *int     `json:"completions,omitempty"`
+	Attempts         *int     `json:"attempts,omitempty"`
+	PassingYards     *float64 `json:"passing_yards,omitempty"`
+	PassingTds       *int     `json:"passing_tds,omitempty"`
+	Interceptions    *int     `json:"interceptions,omitempty"`
+	Carries          *int     `json:"carries,omitempty"`
+	RushingYards     *float64 `json:"rushing_yards,omitempty"`
+	RushingTds       *int     `json:"rushing_tds,omitempty"`
+	Receptions       *int     `json:"receptions,omitempty"`
+	Targets          *int     `json:"targets,omitempty"`
+	ReceivingYards   *float64 `json:"receiving_yards,omitempty"`
+	ReceivingTds     *int     `json:"receiving_tds,omitempty"`
+	FantasyPoints    *float64 `json:"fantasy_points,omitempty"`
+	FantasyPointsPPR *float64 `json:"fantasy_points_ppr,omitempty"`
+}
+
+// PlayerSummary is the combined response for the player detail page.
+type PlayerSummary struct {
+	Player       Player           `json:"player"`
+	CareerTotals SeasonTotals     `json:"career_totals"`
+	Seasons      []SeasonTotals   `json:"seasons"`
+	RecentGames  []PlayerStat     `json:"recent_games"`
+	Rankings     []FantasyRanking `json:"rankings"`
+}
+
 // FantasyRanking represents a row from the fantasy_rankings table.
 type FantasyRanking struct {
 	ID         int      `json:"id"`
+	PlayerDbID *int     `json:"player_db_id,omitempty"`
 	PlayerID   *string  `json:"player_id,omitempty"`
 	PlayerName string   `json:"player_name"`
 	Pos        *string  `json:"pos,omitempty"`

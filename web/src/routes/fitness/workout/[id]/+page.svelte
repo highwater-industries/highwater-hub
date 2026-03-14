@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import {
@@ -46,9 +46,11 @@
 		if (id) loadWorkout(id);
 	});
 
-	async function loadWorkout(id: number) {
-		loading = true;
-		error = '';
+	async function loadWorkout(id: number, soft = false) {
+		if (!soft) {
+			loading = true;
+			error = '';
+		}
 		try {
 			workout = await getWorkout(id);
 		} catch (e) {
@@ -82,10 +84,14 @@
 		if (!workout) return;
 		try {
 			await addExerciseToWorkout(workout.id, exercise.id);
-			await loadWorkout(workout.id);
+			await loadWorkout(workout.id, true);
 			showPicker = false;
 			exerciseSearch = '';
 			exerciseCategory = '';
+			// Scroll to the new exercise (last one)
+			await tick();
+			const cards = document.querySelectorAll('[data-exercise-card]');
+			cards[cards.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		} catch (e) {
 			console.error('Failed to add exercise', e);
 		}
@@ -102,17 +108,27 @@
 		if (!workout) return;
 		const isCardio = we.exercise_category === 'cardio';
 		try {
+			let newSet: WorkoutSet;
 			if (isCardio) {
-				await addSet(we.id, {});
+				newSet = await addSet(we.id, {});
 			} else {
 				// Pre-fill from last set in this exercise if available
 				const lastSet = we.sets.length > 0 ? we.sets[we.sets.length - 1] : null;
-				await addSet(we.id, {
+				newSet = await addSet(we.id, {
 					reps: lastSet?.reps,
 					weight: lastSet?.weight
 				});
 			}
-			await loadWorkout(workout.id);
+			// Optimistic local update — push the new set without full reload
+			const ex = workout.exercises.find((e) => e.id === we.id);
+			if (ex) {
+				ex.sets = [...ex.sets, newSet];
+				workout = { ...workout }; // trigger reactivity
+			}
+			// Scroll to the new set row
+			await tick();
+			const row = document.querySelector(`[data-set-id="${newSet.id}"]`);
+			row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		} catch (e) {
 			console.error('Failed to add set', e);
 		}
@@ -121,6 +137,17 @@
 	async function handleUpdateSet(s: WorkoutSet, field: string, value: string) {
 		if (!workout) return;
 		const numVal = value === '' ? undefined : Number(value);
+
+		// Optimistic local update — keep local state in sync immediately
+		const ex = workout.exercises.find((e) => e.sets.some((st) => st.id === s.id));
+		if (ex) {
+			const localSet = ex.sets.find((st) => st.id === s.id);
+			if (localSet) {
+				(localSet as any)[field] = numVal;
+				workout = { ...workout }; // trigger reactivity
+			}
+		}
+
 		try {
 			await updateSet(s.id, { [field]: numVal });
 		} catch (e) {
@@ -130,11 +157,23 @@
 
 	async function handleDeleteSet(setId: number) {
 		if (!workout) return;
+		// Optimistic local removal
+		for (const ex of workout.exercises) {
+			const idx = ex.sets.findIndex((s) => s.id === setId);
+			if (idx !== -1) {
+				ex.sets = ex.sets.filter((s) => s.id !== setId);
+				// Renumber remaining sets
+				ex.sets.forEach((s, i) => (s.set_number = i + 1));
+				workout = { ...workout };
+				break;
+			}
+		}
 		try {
 			await deleteSet(setId);
-			await loadWorkout(workout.id);
 		} catch (e) {
 			console.error('Failed to delete set', e);
+			// Reload to restore correct state on error
+			if (workout) await loadWorkout(workout.id, true);
 		}
 	}
 
@@ -166,11 +205,14 @@
 	async function handleRemoveExercise(weId: number) {
 		if (!workout) return;
 		confirmDeleteId = null;
+		// Optimistic local removal
+		workout.exercises = workout.exercises.filter((e) => e.id !== weId);
+		workout = { ...workout };
 		try {
 			await removeWorkoutExercise(weId);
-			await loadWorkout(workout.id);
 		} catch (e) {
 			console.error('Failed to remove exercise', e);
+			if (workout) await loadWorkout(workout.id, true);
 		}
 	}
 
@@ -259,8 +301,9 @@
 						class="checkbox checkbox-xs checkbox-warning"
 						checked={workout.is_deload}
 						onchange={async (e) => {
+							if (!workout) return;
 							await updateWorkoutMeta(workout.id, { is_deload: e.currentTarget.checked });
-							await loadWorkout(workout.id);
+							workout = { ...workout, is_deload: e.currentTarget.checked };
 						}}
 					/>
 					<span class="text-xs opacity-50">Deload</span>
@@ -273,7 +316,7 @@
 
 	<!-- Exercises -->
 	{#each workout.exercises as we, idx (we.id)}
-		<div class="card bg-base-200 border-2 border-base-300 mb-4">
+		<div class="card bg-base-200 border-2 border-base-300 mb-4" data-exercise-card={we.id}>
 			<div class="card-body p-4">
 				<!-- Exercise Header -->
 				<div class="flex justify-between items-start">
@@ -310,38 +353,73 @@
 
 				<!-- History Panel -->
 				{#if expandedHistory === we.id && historyMap[we.exercise_id]}
+					{@const isCardio = we.exercise_category === 'cardio'}
 					<div class="bg-base-300 rounded-md p-3 mt-2 text-sm">
-						<h4 class="font-bold text-xs opacity-60 tracking-wide mb-2">RECENT HISTORY</h4>
-						{#each historyMap[we.exercise_id] as entry}
-							<div class="mb-2 last:mb-0">
-								<div class="flex items-center gap-2">
-									<span class="font-semibold text-xs">{formatDate(entry.date)}</span>
-									{#if entry.difficulty}
-										<span class="badge badge-xs badge-outline">{difficultyLabels[entry.difficulty]}</span>
-									{/if}
-									{#if entry.ready_to_progress}
-										<span class="badge badge-xs badge-success">↑</span>
-									{/if}
-								</div>
-								<div class="text-xs opacity-60 mt-0.5">
-									{#each entry.sets as s, i}
-										{#if s.reps !== undefined && s.weight !== undefined}
-											{i > 0 ? ' → ' : ''}{s.reps}×{s.weight}lb
-										{:else if s.duration_seconds !== undefined}
-											{i > 0 ? ' → ' : ''}{Math.round(s.duration_seconds / 60)}min
-											{#if s.distance_miles !== undefined}
-												/ {s.distance_miles}mi
-											{/if}
+						<div class="flex items-center justify-between mb-2">
+							<h4 class="font-bold text-xs opacity-60 tracking-wide">RECENT HISTORY</h4>
+							<a href="/fitness/progress" class="link link-primary text-xs">Full Progress →</a>
+						</div>
+						{#if (historyMap[we.exercise_id] ?? []).length > 0}
+						<div class="overflow-x-auto">
+							<table class="table table-xs table-zebra">
+								<thead>
+									<tr class="text-xs opacity-60">
+										<th>Date</th>
+										{#if isCardio}
+											<th class="text-right">Duration</th>
+											<th class="text-right">Dist</th>
+										{:else}
+											<th class="text-right">Final Set</th>
+											<th class="text-right">Best Set</th>
 										{/if}
+										<th class="text-center">Diff</th>
+										<th class="text-center">RTP</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each historyMap[we.exercise_id] as entry}
+										{@const sets = entry.sets ?? []}
+										{@const final_s = sets.length > 0 ? sets[sets.length - 1] : null}
+										{@const best_s = sets.reduce((b, s) => (s.weight ?? 0) > (b?.weight ?? 0) || ((s.weight ?? 0) === (b?.weight ?? 0) && (s.reps ?? 0) > (b?.reps ?? 0)) ? s : b, sets[0] ?? null)}
+										<tr class="hover">
+											<td class="font-semibold text-xs whitespace-nowrap">{formatDate(entry.date)}</td>
+											{#if isCardio}
+												<td class="text-right text-xs">
+													{final_s?.duration_seconds ? `${Math.round(final_s.duration_seconds / 60)}min` : '—'}
+												</td>
+												<td class="text-right text-xs">
+													{final_s?.distance_miles ? `${final_s.distance_miles}mi` : '—'}
+												</td>
+											{:else}
+												<td class="text-right text-xs font-mono">
+													{final_s?.weight !== undefined && final_s?.reps !== undefined ? `${final_s.weight}lb × ${final_s.reps}` : '—'}
+												</td>
+												<td class="text-right text-xs font-mono opacity-60">
+													{best_s?.weight !== undefined && best_s?.reps !== undefined ? `${best_s.weight}lb × ${best_s.reps}` : '—'}
+												</td>
+											{/if}
+											<td class="text-center">
+												{#if entry.difficulty}
+													<span class="badge badge-xs badge-outline">{difficultyLabels[entry.difficulty]}</span>
+												{:else}
+													<span class="text-xs opacity-30">—</span>
+												{/if}
+											</td>
+											<td class="text-center">
+												{#if entry.ready_to_progress}
+													<span class="text-success font-bold text-xs">✓</span>
+												{:else}
+													<span class="text-xs opacity-30">—</span>
+												{/if}
+											</td>
+										</tr>
 									{/each}
-								</div>
-								{#if entry.notes}
-									<div class="text-xs opacity-40 italic mt-0.5">{entry.notes}</div>
-								{/if}
-							</div>
+								</tbody>
+							</table>
+						</div>
 						{:else}
 							<p class="text-xs opacity-40">No history yet</p>
-						{/each}
+						{/if}
 					</div>
 				{/if}
 
@@ -349,7 +427,7 @@
 				{#if we.exercise_category === 'cardio'}
 					<!-- Cardio: single row with duration/distance/speed/incline -->
 					{#each we.sets as s, i (s.id)}
-						<div class="grid grid-cols-2 gap-2 mt-2 items-center">
+						<div class="grid grid-cols-2 gap-2 mt-2 items-center" data-set-id={s.id}>
 							<label class="text-xs opacity-50">
 								Duration (min)
 								<input
@@ -422,7 +500,7 @@
 								</thead>
 								<tbody>
 									{#each we.sets as s, i (s.id)}
-										<tr>
+										<tr data-set-id={s.id}>
 											<td class="opacity-50">{s.set_number}</td>
 											<td>
 												<input

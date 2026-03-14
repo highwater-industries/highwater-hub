@@ -191,7 +191,7 @@
 					{#each rankings as r}
 						<tr class="hover">
 							<td class="text-right font-bold text-accent">{fmtRank(r.rank)}</td>
-							<td class="font-bold text-primary">{r.player_name}</td>
+							<td class="font-bold text-primary">{#if r.player_db_id}<a href="/players/{r.player_db_id}" class="hover:underline">{r.player_name}</a>{:else}{r.player_name}{/if}</td>
 							<td>{r.pos ?? '—'}</td>
 							<td>{r.team ?? '—'}</td>
 							<td class="text-right">{fmtDec(r.ecr)}</td>

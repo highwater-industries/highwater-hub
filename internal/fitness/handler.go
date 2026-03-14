@@ -197,6 +197,35 @@ func HandleGetExerciseHistory(store Store) http.HandlerFunc {
 	}
 }
 
+// HandleGetUserProgress returns exercise progress cards for a user.
+//
+//	GET /api/fitness/progress?user_id=1
+func HandleGetUserProgress(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "user_id is required",
+			})
+			return
+		}
+
+		limit := 6
+		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 20 {
+			limit = v
+		}
+
+		cards, err := store.GetUserProgress(r.Context(), userID, limit)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to get user progress",
+			})
+			return
+		}
+		httputil.Encode(w, http.StatusOK, cards)
+	}
+}
+
 // ── Workouts ──
 
 // HandleListWorkouts returns a paginated list of workouts for a user.
@@ -523,9 +552,9 @@ func HandleAddSet(store Store) http.HandlerFunc {
 	}
 }
 
-// HandleUpdateSet updates an existing set.
+// HandleUpdateSet performs a partial update on an existing set.
 //
-//	PUT /api/fitness/sets/{id}  {"reps": 10, "weight": 190}
+//	PUT /api/fitness/sets/{id}  {"reps": 10}  — only updates reps, leaves weight etc. unchanged
 func HandleUpdateSet(store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.Atoi(r.PathValue("id"))
@@ -536,16 +565,15 @@ func HandleUpdateSet(store Store) http.HandlerFunc {
 			return
 		}
 
-		var set WorkoutSet
-		if err := json.NewDecoder(r.Body).Decode(&set); err != nil {
+		var fields map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
 			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
 				Error: "invalid request body",
 			})
 			return
 		}
-		set.ID = id
 
-		if err := store.UpdateSet(r.Context(), set); err != nil {
+		if err := store.UpdateSet(r.Context(), id, fields); err != nil {
 			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
 				Error: "failed to update set",
 			})

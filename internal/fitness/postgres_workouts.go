@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -426,22 +427,35 @@ func (s *PostgresStore) AddSet(ctx context.Context, workoutExerciseID int, set W
 	return ws, nil
 }
 
-// UpdateSet replaces the values of an existing set.
-func (s *PostgresStore) UpdateSet(ctx context.Context, set WorkoutSet) error {
-	reps := toNullInt64(set.Reps)
-	weight := toNullFloat64(set.Weight)
-	dur := toNullInt64(set.DurationSeconds)
-	dist := toNullFloat64(set.DistanceMiles)
-	speed := toNullFloat64(set.TopSpeedMph)
-	incline := toNullFloat64(set.InclinePercent)
+// UpdateSet performs a partial update — only fields present in the map are changed.
+func (s *PostgresStore) UpdateSet(ctx context.Context, id int, fields map[string]interface{}) error {
+	allowed := map[string]string{
+		"reps": "reps", "weight": "weight",
+		"duration_seconds": "duration_seconds", "distance_miles": "distance_miles",
+		"top_speed_mph": "top_speed_mph", "incline_percent": "incline_percent",
+	}
 
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE workout_sets
-		 SET reps = $2, weight = $3, duration_seconds = $4,
-		     distance_miles = $5, top_speed_mph = $6, incline_percent = $7
-		 WHERE id = $1`,
-		set.ID, reps, weight, dur, dist, speed, incline,
-	)
+	var setClauses []string
+	var args []interface{}
+	argN := 1
+
+	for jsonKey, col := range allowed {
+		if val, ok := fields[jsonKey]; ok {
+			setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, argN))
+			args = append(args, val) // nil → NULL, number → value
+			argN++
+		}
+	}
+
+	if len(setClauses) == 0 {
+		return nil // nothing to update
+	}
+
+	args = append(args, id)
+	query := fmt.Sprintf("UPDATE workout_sets SET %s WHERE id = $%d",
+		strings.Join(setClauses, ", "), argN)
+
+	_, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("update set: %w", err)
 	}

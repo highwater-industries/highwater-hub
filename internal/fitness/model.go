@@ -91,3 +91,14 @@ type ExerciseHistoryEntry struct {
 	Notes           *string      `json:"notes,omitempty"`
 	Sets            []WorkoutSet `json:"sets"`
 }
+
+// ExerciseProgressCard holds an exercise and its recent session history,
+// used to render progress tracking cards.
+type ExerciseProgressCard struct {
+	ExerciseID       int                    `json:"exercise_id"`
+	ExerciseName     string                 `json:"exercise_name"`
+	ExerciseCategory string                 `json:"exercise_category"`
+	MuscleGroup      *string                `json:"muscle_group,omitempty"`
+	Equipment        *string                `json:"equipment,omitempty"`
+	Sessions         []ExerciseHistoryEntry `json:"sessions"`
+}

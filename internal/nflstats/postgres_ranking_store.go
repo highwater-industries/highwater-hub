@@ -25,7 +25,7 @@ func (s *PostgresRankingStore) ListRankings(ctx context.Context, f RankingFilter
 	where, args := buildRankingWhere(f)
 
 	var total int
-	countSQL := "SELECT COUNT(*) FROM fantasy_rankings" + where
+	countSQL := "SELECT COUNT(*) FROM fantasy_rankings fr" + where
 	if err := s.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count fantasy_rankings: %w", err)
 	}
@@ -33,10 +33,11 @@ func (s *PostgresRankingStore) ListRankings(ctx context.Context, f RankingFilter
 	orderBy := buildRankingOrderBy(f.Sort, f.Order)
 
 	querySQL := fmt.Sprintf(
-		`SELECT id, player_id, player_name, pos, team, rank, ecr,
-		        sd, best, worst, avg, rank_type, page_type,
-		        season, week, source, created_at
-		 FROM fantasy_rankings%s
+		`SELECT fr.id, p.id AS player_db_id, fr.player_id, fr.player_name, fr.pos, fr.team, fr.rank, fr.ecr,
+		        fr.sd, fr.best, fr.worst, fr.avg, fr.rank_type, fr.page_type,
+		        fr.season, fr.week, fr.source, fr.created_at
+		 FROM fantasy_rankings fr
+		 LEFT JOIN players p ON fr.player_id = p.player_id%s
 		 %s
 		 LIMIT $%d OFFSET $%d`,
 		where, orderBy, len(args)+1, len(args)+2,
@@ -74,31 +75,31 @@ func buildRankingWhere(f RankingFilter) (string, []any) {
 
 	if f.RankType != nil {
 		args = append(args, *f.RankType)
-		conditions = append(conditions, fmt.Sprintf("rank_type = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.rank_type = $%d", len(args)))
 	}
 	if f.Pos != nil {
 		args = append(args, *f.Pos)
-		conditions = append(conditions, fmt.Sprintf("pos = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.pos = $%d", len(args)))
 	}
 	if f.Team != nil {
 		args = append(args, *f.Team)
-		conditions = append(conditions, fmt.Sprintf("team = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.team = $%d", len(args)))
 	}
 	if f.Search != nil {
 		args = append(args, "%"+*f.Search+"%")
-		conditions = append(conditions, fmt.Sprintf("player_name ILIKE $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.player_name ILIKE $%d", len(args)))
 	}
 	if f.Season != nil {
 		args = append(args, *f.Season)
-		conditions = append(conditions, fmt.Sprintf("season = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.season = $%d", len(args)))
 	}
 	if f.Week != nil {
 		args = append(args, *f.Week)
-		conditions = append(conditions, fmt.Sprintf("week = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.week = $%d", len(args)))
 	}
 	if f.Source != nil {
 		args = append(args, *f.Source)
-		conditions = append(conditions, fmt.Sprintf("source = $%d", len(args)))
+		conditions = append(conditions, fmt.Sprintf("fr.source = $%d", len(args)))
 	}
 
 	if len(conditions) == 0 {
@@ -109,13 +110,14 @@ func buildRankingWhere(f RankingFilter) (string, []any) {
 
 func scanRankingRow(rows *sql.Rows) (FantasyRanking, error) {
 	var r FantasyRanking
+	var playerDbID sql.NullInt64
 	var playerID, pos, team, rankType, pageType, source sql.NullString
 	var rank, best, worst sql.NullInt64
 	var season, week sql.NullInt64
 	var ecr, sd, avg sql.NullFloat64
 
 	err := rows.Scan(
-		&r.ID, &playerID, &r.PlayerName, &pos, &team, &rank, &ecr,
+		&r.ID, &playerDbID, &playerID, &r.PlayerName, &pos, &team, &rank, &ecr,
 		&sd, &best, &worst, &avg, &rankType, &pageType,
 		&season, &week, &source, &r.CreatedAt,
 	)
@@ -123,6 +125,10 @@ func scanRankingRow(rows *sql.Rows) (FantasyRanking, error) {
 		return FantasyRanking{}, err
 	}
 
+	if playerDbID.Valid {
+		v := int(playerDbID.Int64)
+		r.PlayerDbID = &v
+	}
 	if playerID.Valid {
 		r.PlayerID = &playerID.String
 	}
@@ -192,7 +198,7 @@ func buildRankingOrderBy(sort, order string) string {
 		if order == "desc" {
 			dir = "DESC"
 		}
-		return " ORDER BY " + sort + " " + dir + " NULLS LAST"
+		return " ORDER BY fr." + sort + " " + dir + " NULLS LAST"
 	}
-	return " ORDER BY rank ASC NULLS LAST"
+	return " ORDER BY fr.rank ASC NULLS LAST"
 }
