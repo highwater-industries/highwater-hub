@@ -7,6 +7,7 @@ returns a job ID immediately (HTTP 202 Accepted).  The Go server can
 then poll ``GET /jobs/{job_id}`` until the job completes.
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -18,7 +19,7 @@ from app.schemas.nflstats import (
     ImportRequest,
     JobStatus,
 )
-from app.tasks.import_task import run_import
+from app.tasks.import_task import _record_history, run_import
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ router = APIRouter()
 async def start_import(body: ImportRequest):
     """Dispatch an NFL stats import job to the Celery worker.
 
-    Returns a ``job_id`` immediately.  Use ``GET /jobs/{job_id}``
-    to poll for progress and results.
+    Creates a "pending" row in ``collection_history`` immediately so
+    the job is visible in the UI before the Celery worker picks it up.
     """
     logger.info(
         "Import requested: collector=%s seasons=%s strategy=%s",
@@ -59,15 +60,28 @@ async def start_import(body: ImportRequest):
     if body.rank_type is not None:
         collector_kwargs["rank_type"] = body.rank_type
 
+    # Pre-create a "pending" row so the job is visible in the UI immediately
+    history_id: int = await asyncio.to_thread(
+        _record_history,
+        collector_type=body.collector_type.value,
+        status="pending",
+        params={
+            "seasons": body.seasons,
+            "strategy": body.strategy.value,
+            **collector_kwargs,
+        },
+    )
+
     # Dispatch to Celery — returns immediately
     task = run_import.delay(
         collector_type=body.collector_type.value,
         seasons=body.seasons,
         strategy=body.strategy.value,
         collector_kwargs=collector_kwargs,
+        history_id=history_id,
     )
 
-    logger.info("Dispatched import task %s", task.id)
+    logger.info("Dispatched import task %s (history_id=%d)", task.id, history_id)
     return ImportAccepted(
         job_id=task.id,
         status="accepted",

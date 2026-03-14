@@ -49,7 +49,7 @@ func (s *PostgresRankingStore) ListRankings(ctx context.Context, f RankingFilter
 	}
 	defer rows.Close()
 
-	var rankings []FantasyRanking
+	rankings := make([]FantasyRanking, 0)
 	for rows.Next() {
 		r, err := scanRankingRow(rows)
 		if err != nil {

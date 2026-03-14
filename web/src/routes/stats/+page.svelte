@@ -78,12 +78,12 @@
 		loadingLeaders = true;
 		try {
 			const res = await getLeaders(
-				leaderStat,
-				leaderSeason,
-				leaderWeek,
-				leaderPosition || undefined,
-				25
-			);
+leaderStat,
+leaderSeason,
+leaderWeek,
+leaderPosition || undefined,
+25
+);
 			leaders = res.items;
 		} catch (e) {
 			console.error('Failed to load leaders', e);
@@ -133,39 +133,41 @@
 	onMount(loadStats);
 </script>
 
-<div class="page-header">
-	<h1>// PLAYER STATS</h1>
-	<div style="display: flex; gap: 0.5rem; align-items: center">
-		<span style="font-family: var(--font-pixel); font-size: 0.55rem; color: var(--text-muted)">
-			{total.toLocaleString()} STAT LINES
-		</span>
-		<button class:primary={showLeaders} onclick={() => { showLeaders = !showLeaders; if (showLeaders) loadLeaders(); }}>
-			{showLeaders ? '← BROWSE' : '★ LEADERS'}
+<div class="flex justify-between items-center mb-4">
+	<h1 class="text-2xl font-bold text-primary tracking-wide">// PLAYER STATS</h1>
+	<div class="flex gap-2 items-center">
+		<span class="text-sm opacity-60">{total.toLocaleString()} stat lines</span>
+		<button
+			class="btn btn-sm"
+			class:btn-primary={showLeaders}
+			onclick={() => { showLeaders = !showLeaders; if (showLeaders) loadLeaders(); }}
+		>
+			{showLeaders ? '← Browse' : '★ Leaders'}
 		</button>
 	</div>
 </div>
 
 {#if showLeaders}
 	<!-- Leaders Panel -->
-	<div class="filters">
-		<select bind:value={leaderStat} onchange={loadLeaders}>
+	<div class="flex flex-wrap gap-2 mb-4 items-center">
+		<select class="select select-bordered select-sm" bind:value={leaderStat} onchange={loadLeaders}>
 			{#each LEADER_STATS as ls}
 				<option value={ls.value}>{ls.label}</option>
 			{/each}
 		</select>
-		<select bind:value={leaderSeason} onchange={loadLeaders}>
+		<select class="select select-bordered select-sm" bind:value={leaderSeason} onchange={loadLeaders}>
 			{#each SEASONS as year}
 				<option value={year}>{year}</option>
 			{/each}
 		</select>
-		<select bind:value={leaderWeek} onchange={loadLeaders}>
-			<option value={undefined}>FULL SEASON</option>
+		<select class="select select-bordered select-sm" bind:value={leaderWeek} onchange={loadLeaders}>
+			<option value={undefined}>Full Season</option>
 			{#each NFL_WEEKS as w}
-				<option value={w}>WEEK {w}</option>
+				<option value={w}>Week {w}</option>
 			{/each}
 		</select>
-		<select bind:value={leaderPosition} onchange={loadLeaders}>
-			<option value="">ALL POS</option>
+		<select class="select select-bordered select-sm" bind:value={leaderPosition} onchange={loadLeaders}>
+			<option value="">All Pos</option>
 			{#each POSITIONS as pos}
 				<option value={pos.abbr}>{pos.abbr}</option>
 			{/each}
@@ -173,149 +175,152 @@
 	</div>
 
 	{#if loadingLeaders}
-		<div class="card" style="text-align: center; padding: 2rem">
-			<p style="font-family: var(--font-pixel); font-size: 0.6rem; color: var(--accent)">RANKING LEADERS...</p>
+		<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+			<span class="loading loading-dots loading-md text-primary"></span>
+			<p class="text-sm opacity-60 mt-2">Ranking leaders...</p>
 		</div>
 	{:else}
-		<div class="card" style="padding: 0; overflow: hidden">
-			<table>
-				<thead>
-					<tr>
-						<th>#</th>
-						<th>PLAYER</th>
-						<th>TEAM</th>
-						<th>POS</th>
-						<th style="text-align: right">{LEADER_STATS.find(ls => ls.value === leaderStat)?.label ?? leaderStat}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each leaders as leader, i}
+		<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
+			<div class="table-scroll-wrap">
+				<table class="table table-zebra table-pin-rows table-responsive">
+					<thead>
 						<tr>
-							<td style="color: var(--accent); font-family: var(--font-pixel); font-size: 0.55rem">{i + 1}</td>
-							<td><strong style="color: var(--accent)">{leader.player_name}</strong></td>
-							<td>{leader.team ?? '—'}</td>
-							<td>{leader.position ?? '—'}</td>
-							<td style="text-align: right; font-family: var(--font-pixel); font-size: 0.55rem; color: var(--accent)">
-								{fmtNum(leader[leaderStat as keyof PlayerStat] as number | undefined)}
-							</td>
+							<th>#</th>
+							<th>Player</th>
+							<th>Team</th>
+							<th>Pos</th>
+							<th class="text-right">{LEADER_STATS.find(ls => ls.value === leaderStat)?.label ?? leaderStat}</th>
 						</tr>
-					{:else}
-						<tr>
-							<td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem; font-family: var(--font-pixel); font-size: 0.55rem">
-								NO LEADER DATA
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{#each leaders as leader, i}
+							<tr class="hover">
+								<td class="font-bold text-primary">{i + 1}</td>
+								<td class="font-bold text-primary">{leader.player_name}</td>
+								<td>{leader.team ?? '—'}</td>
+								<td>{leader.position ?? '—'}</td>
+								<td class="text-right font-bold text-accent">
+									{fmtNum(leader[leaderStat as keyof PlayerStat] as number | undefined)}
+								</td>
+							</tr>
+						{:else}
+							<tr>
+								<td colspan="5" class="text-center opacity-50 py-8">No leader data</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	{/if}
 {:else}
 	<!-- Browse Panel -->
-	<div class="filters">
+	<div class="flex flex-wrap gap-2 mb-4 items-center">
 		<input
 			type="text"
-			placeholder="SEARCH NAME..."
+			placeholder="Search name..."
+			class="input input-bordered input-sm w-44"
 			bind:value={search}
 			onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 		/>
-		<select bind:value={season} onchange={applyFilters}>
-			<option value={undefined}>ALL SEASONS</option>
+		<select class="select select-bordered select-sm" bind:value={season} onchange={applyFilters}>
+			<option value={undefined}>All Seasons</option>
 			{#each SEASONS as year}
 				<option value={year}>{year}</option>
 			{/each}
 		</select>
-		<select bind:value={week} onchange={applyFilters}>
-			<option value={undefined}>ALL WEEKS</option>
+		<select class="select select-bordered select-sm" bind:value={week} onchange={applyFilters}>
+			<option value={undefined}>All Weeks</option>
 			{#each NFL_WEEKS as w}
-				<option value={w}>WK {w}</option>
+				<option value={w}>Wk {w}</option>
 			{/each}
 		</select>
-		<select bind:value={team} onchange={applyFilters}>
-			<option value="">ALL TEAMS</option>
+		<select class="select select-bordered select-sm" bind:value={team} onchange={applyFilters}>
+			<option value="">All Teams</option>
 			{#each NFL_TEAMS as t}
 				<option value={t.abbr}>{t.abbr}</option>
 			{/each}
 		</select>
-		<select bind:value={position} onchange={applyFilters}>
-			<option value="">ALL POS</option>
+		<select class="select select-bordered select-sm" bind:value={position} onchange={applyFilters}>
+			<option value="">All Pos</option>
 			{#each POSITIONS as pos}
 				<option value={pos.abbr}>{pos.abbr}</option>
 			{/each}
 		</select>
-		<select bind:value={statType} onchange={applyFilters}>
-			<option value="">ALL TYPES</option>
+		<select class="select select-bordered select-sm" bind:value={statType} onchange={applyFilters}>
+			<option value="">All Types</option>
 			{#each STAT_TYPES as st}
 				<option value={st.value}>{st.label}</option>
 			{/each}
 		</select>
-		<select bind:value={source} onchange={applyFilters}>
-			<option value="">ALL SOURCES</option>
+		<select class="select select-bordered select-sm" bind:value={source} onchange={applyFilters}>
+			<option value="">All Sources</option>
 			{#each SOURCES as src}
 				<option value={src}>{src}</option>
 			{/each}
 		</select>
-		<button onclick={applyFilters}>SCAN</button>
-		<button onclick={clearFilters}>RESET</button>
+		<button class="btn btn-sm" onclick={applyFilters}>Scan</button>
+		<button class="btn btn-ghost btn-sm" onclick={clearFilters}>Reset</button>
 	</div>
 
 	{#if loading}
-		<div class="card" style="text-align: center; padding: 2rem">
-			<p style="font-family: var(--font-pixel); font-size: 0.6rem; color: var(--accent)">SCANNING STATS...</p>
+		<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+			<span class="loading loading-dots loading-md text-primary"></span>
+			<p class="text-sm opacity-60 mt-2">Scanning stats...</p>
 		</div>
 	{:else}
-		<div class="card" class:table-fetching={fetching} style="padding: 0; overflow-x: auto">
-			<table>
-				<thead>
-					<tr>
-						<th class="sortable" onclick={() => toggleSort('player_name')}>PLAYER{sortIndicator('player_name')}</th>
-						<th class="sortable" onclick={() => toggleSort('team')}>TEAM{sortIndicator('team')}</th>
-						<th class="sortable" onclick={() => toggleSort('position')}>POS{sortIndicator('position')}</th>
-						<th class="sortable" onclick={() => toggleSort('season')}>SZN{sortIndicator('season')}</th>
-						<th class="sortable" onclick={() => toggleSort('week')}>WK{sortIndicator('week')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('passing_yards')}>PASS YD{sortIndicator('passing_yards')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('passing_tds')}>PASS TD{sortIndicator('passing_tds')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('rushing_yards')}>RUSH YD{sortIndicator('rushing_yards')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('rushing_tds')}>RUSH TD{sortIndicator('rushing_tds')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('receiving_yards')}>REC YD{sortIndicator('receiving_yards')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('receiving_tds')}>REC TD{sortIndicator('receiving_tds')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('receptions')}>REC{sortIndicator('receptions')}</th>
-						<th class="sortable" style="text-align: right" onclick={() => toggleSort('fantasy_points_ppr')}>PPR{sortIndicator('fantasy_points_ppr')}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each stats as s}
+		<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+			<div class="table-scroll-wrap">
+				<table class="table table-zebra table-pin-rows table-sm table-responsive">
+					<thead>
 						<tr>
-							<td><strong style="color: var(--accent)">{s.player_name}</strong></td>
-							<td>{s.team ?? '—'}</td>
-							<td>{s.position ?? '—'}</td>
-							<td>{s.season}</td>
-							<td>{s.week}</td>
-							<td style="text-align: right">{fmtNum(s.passing_yards)}</td>
-							<td style="text-align: right">{fmtNum(s.passing_tds)}</td>
-							<td style="text-align: right">{fmtNum(s.rushing_yards)}</td>
-							<td style="text-align: right">{fmtNum(s.rushing_tds)}</td>
-							<td style="text-align: right">{fmtNum(s.receiving_yards)}</td>
-							<td style="text-align: right">{fmtNum(s.receiving_tds)}</td>
-							<td style="text-align: right">{fmtNum(s.receptions)}</td>
-							<td style="text-align: right; color: var(--accent)">{fmtNum(s.fantasy_points_ppr)}</td>
+							<th class="sortable" onclick={() => toggleSort('player_name')}>Player{sortIndicator('player_name')}</th>
+							<th class="sortable" onclick={() => toggleSort('team')}>Team{sortIndicator('team')}</th>
+							<th class="sortable" onclick={() => toggleSort('position')}>Pos{sortIndicator('position')}</th>
+							<th class="sortable" onclick={() => toggleSort('season')}>Szn{sortIndicator('season')}</th>
+							<th class="sortable" onclick={() => toggleSort('week')}>Wk{sortIndicator('week')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('passing_yards')}>Pass Yd{sortIndicator('passing_yards')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('passing_tds')}>Pass TD{sortIndicator('passing_tds')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('rushing_yards')}>Rush Yd{sortIndicator('rushing_yards')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('rushing_tds')}>Rush TD{sortIndicator('rushing_tds')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('receiving_yards')}>Rec Yd{sortIndicator('receiving_yards')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('receiving_tds')}>Rec TD{sortIndicator('receiving_tds')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('receptions')}>Rec{sortIndicator('receptions')}</th>
+							<th class="sortable text-right" onclick={() => toggleSort('fantasy_points_ppr')}>PPR{sortIndicator('fantasy_points_ppr')}</th>
 						</tr>
-					{:else}
-						<tr>
-							<td colspan="13" style="text-align: center; color: var(--text-muted); padding: 2rem; font-family: var(--font-pixel); font-size: 0.55rem">
-								NO STAT RECORDS FOUND
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{#each stats as s}
+							<tr class="hover">
+								<td class="font-bold text-primary">{s.player_name}</td>
+								<td>{s.team ?? '—'}</td>
+								<td>{s.position ?? '—'}</td>
+								<td>{s.season}</td>
+								<td>{s.week}</td>
+								<td class="text-right">{fmtNum(s.passing_yards)}</td>
+								<td class="text-right">{fmtNum(s.passing_tds)}</td>
+								<td class="text-right">{fmtNum(s.rushing_yards)}</td>
+								<td class="text-right">{fmtNum(s.rushing_tds)}</td>
+								<td class="text-right">{fmtNum(s.receiving_yards)}</td>
+								<td class="text-right">{fmtNum(s.receiving_tds)}</td>
+								<td class="text-right">{fmtNum(s.receptions)}</td>
+								<td class="text-right font-bold text-accent">{fmtNum(s.fantasy_points_ppr)}</td>
+							</tr>
+						{:else}
+							<tr>
+								<td colspan="13" class="text-center opacity-50 py-8">No stat records found</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</div>
 
-		<div class="pagination">
-			<span>{offset + 1}–{Math.min(offset + limit, total)} OF {total.toLocaleString()}</span>
-			<div style="display: flex; gap: 0.5rem">
-				<button onclick={prevPage} disabled={offset === 0}>◄ PREV</button>
-				<button onclick={nextPage} disabled={offset + limit >= total}>NEXT ►</button>
+		<div class="flex justify-between items-center mt-4 text-sm opacity-70">
+			<span>{offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()}</span>
+			<div class="join">
+				<button class="join-item btn btn-sm" onclick={prevPage} disabled={offset === 0}>◄ Prev</button>
+				<button class="join-item btn btn-sm" onclick={nextPage} disabled={offset + limit >= total}>Next ►</button>
 			</div>
 		</div>
 	{/if}

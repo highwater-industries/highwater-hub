@@ -19,6 +19,12 @@ celery_app = Celery(
     backend="rpc://",
 )
 
+# -------------------------------------------------------------------
+# Task timeout settings (seconds).  Easy to tune via env vars.
+# -------------------------------------------------------------------
+TASK_SOFT_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", 1800))   # 30 min
+TASK_HARD_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", 2100))        # 35 min
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -31,4 +37,9 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     # Auto-discover tasks in app.tasks
     imports=["app.tasks.import_task"],
+    # Task timeouts — soft raises SoftTimeLimitExceeded (graceful),
+    # hard kills the worker process (last resort).
+    # Override per-env with CELERY_TASK_SOFT_TIME_LIMIT / CELERY_TASK_TIME_LIMIT.
+    task_soft_time_limit=TASK_SOFT_LIMIT,
+    task_time_limit=TASK_HARD_LIMIT,
 )

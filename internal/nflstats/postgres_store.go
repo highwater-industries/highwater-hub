@@ -77,7 +77,7 @@ func (s *PostgresStore) List(ctx context.Context, filter PlayerFilter, offset, l
 	}
 	defer rows.Close()
 
-	var players []Player
+	players := make([]Player, 0)
 	for rows.Next() {
 		p, err := scanPlayerRow(rows)
 		if err != nil {

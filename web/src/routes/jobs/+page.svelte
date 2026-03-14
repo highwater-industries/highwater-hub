@@ -1,16 +1,18 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { listJobs, listPlayers, startImport, batchImport, type Job } from '$lib/api';
+	import { listJobs, listPlayers, startImport, batchImport, fullImport, getJobSummary, type Job, type JobSummary } from '$lib/api';
 	import { SEASONS, COLLECTOR_TYPES, SUMMARY_LEVELS, RANK_TYPES, IMPORT_PRESETS } from '$lib/constants';
 
 	let jobs: Job[] = $state([]);
 	let total = $state(0);
 	let totalPlayers = $state(0);
-	let latestJob: Job | null = $state(null);
-	let loading = $state(true);        // only true on first load
+	let loading = $state(true);
 	let importing = $state(false);
 	let importMessage = $state('');
 	let showImportForm = $state(false);
+
+	// Job summary (queue dashboard)
+	let summary: JobSummary = $state({ pending: 0, running: 0, completed: 0, failed: 0, total: 0 });
 
 	// Import form state
 	let selectedCollector = $state('nflreadpy');
@@ -24,44 +26,62 @@
 	let batchMessage = $state('');
 	let batchSeason = $state(SEASONS[0]);
 
+	// Import tab
+	let importTab = $state('batch');
+
+	// Full import state
+	let fullImporting = $state(false);
+	let fullImportPhase = $state('');
+	let fullImportMessage = $state('');
+	let fullFromSeason = $state(2020);
+	let fullToSeason = $state(SEASONS[0]);
+
 	// Polling
 	let pollTimer: ReturnType<typeof setInterval> | null = $state(null);
 	let hasActiveJobs = $state(false);
 
 	let offset = $state(0);
-	const limit = 20;
+	const limit = 50;
+
+	// Expanded error rows
+	let expandedErrors: Set<number> = $state(new Set());
 
 	const strategies = [
-		{ value: 'merge', label: 'MERGE', desc: 'Upsert — update existing, insert new' },
-		{ value: 'replace', label: 'REPLACE', desc: 'Delete all from source, insert fresh' },
-		{ value: 'append', label: 'APPEND', desc: 'Insert all, no deduplication' },
-		{ value: 'dry_run', label: 'DRY RUN', desc: 'Validate only, skip DB writes' },
+		{ value: 'merge', label: 'Merge', desc: 'Upsert — update existing, insert new' },
+		{ value: 'replace', label: 'Replace', desc: 'Delete all from source, insert fresh' },
+		{ value: 'append', label: 'Append', desc: 'Insert all, no deduplication' },
+		{ value: 'dry_run', label: 'Dry Run', desc: 'Validate only, skip DB writes' },
 	];
 
-	// Initial load — shows loading spinner
+	// Human-readable collector type names
+	const COLLECTOR_LABELS: Record<string, string> = {
+		nflreadpy: 'Rosters',
+		nflreadpy_stats: 'Stats',
+		nflreadpy_schedules: 'Schedules',
+		nflreadpy_ff_rankings: 'Rankings',
+	};
+
 	async function loadJobs() {
 		loading = true;
 		await refreshJobs();
 		loading = false;
 	}
 
-	// Silent background refresh — no loading flash
 	async function refreshJobs() {
 		try {
-			const [jobRes, playerRes] = await Promise.all([
+			const [jobRes, playerRes, summaryRes] = await Promise.all([
 				listJobs(offset, limit),
 				listPlayers({ limit: 1 }),
+				getJobSummary(),
 			]);
 			jobs = jobRes.items;
 			total = jobRes.total;
 			totalPlayers = playerRes.total;
-			latestJob = jobRes.items[0] ?? null;
+			summary = summaryRes;
 
-			// Check if any jobs are still running
-			const active = jobs.some(j => j.status === 'running' || j.status === 'pending' || j.status === 'PENDING' || j.status === 'STARTED');
+			const active = summary.pending > 0 || summary.running > 0;
 			hasActiveJobs = active;
 
-			// If nothing active, stop polling
 			if (!active && pollTimer) {
 				stopPolling();
 			}
@@ -71,7 +91,7 @@
 	}
 
 	function startPolling() {
-		if (pollTimer) return; // already polling
+		if (pollTimer) return;
 		hasActiveJobs = true;
 		pollTimer = setInterval(refreshJobs, 3000);
 	}
@@ -99,12 +119,11 @@
 				opts.rank_type = selectedRankType;
 			}
 			const res = await startImport(opts);
-			importMessage = `DISPATCHED → ${res.job_id.slice(0, 8)}...`;
+			importMessage = `Dispatched → ${res.job_id.slice(0, 8)}...`;
 			showImportForm = false;
-			// Start auto-polling — refreshes every 3s until done
-			setTimeout(async () => { await refreshJobs(); startPolling(); }, 1000);
+			setTimeout(async () => { await refreshJobs(); startPolling(); }, 500);
 		} catch (e) {
-			importMessage = `ERR: ${e}`;
+			importMessage = `Error: ${e}`;
 		} finally {
 			importing = false;
 		}
@@ -118,11 +137,42 @@
 			const imports = preset.build(batchSeason);
 			const res = await batchImport(imports);
 			batchMessage = `${preset.label}: ${res.dispatched} dispatched, ${res.failed} failed`;
-			setTimeout(async () => { await refreshJobs(); startPolling(); }, 1000);
+			setTimeout(async () => { await refreshJobs(); startPolling(); }, 500);
 		} catch (e) {
-			batchMessage = `ERR: ${e}`;
+			batchMessage = `Error: ${e}`;
 		} finally {
 			batchImporting = false;
+		}
+	}
+
+	async function triggerFullImport() {
+		fullImporting = true;
+		fullImportPhase = 'Preparing...';
+		fullImportMessage = '';
+		try {
+			const fromY = Math.min(fullFromSeason, fullToSeason);
+			const toY = Math.max(fullFromSeason, fullToSeason);
+			const seasons: number[] = [];
+			for (let y = toY; y >= fromY; y--) seasons.push(y);
+
+			const totalJobs = seasons.length * 4;
+			fullImportPhase = `Dispatching ${totalJobs} jobs (${seasons.length} seasons × 4 types)...`;
+
+			const result = await fullImport(seasons, (phase, res) => {
+				fullImportPhase = `${phase}: ${res.dispatched} dispatched`;
+				refreshJobs();
+			});
+
+			const dispatched = result.phase1.dispatched + result.phase2.dispatched;
+			const failed = result.phase1.failed + result.phase2.failed;
+			fullImportMessage = `Done — ${dispatched} jobs dispatched, ${failed} failed`;
+			fullImportPhase = '';
+			setTimeout(async () => { await refreshJobs(); startPolling(); }, 500);
+		} catch (e) {
+			fullImportMessage = `Error: ${e}`;
+			fullImportPhase = '';
+		} finally {
+			fullImporting = false;
 		}
 	}
 
@@ -141,247 +191,290 @@
 	}
 
 	function formatDuration(start: string, end: string | null): string {
-		if (!end) return 'RUNNING...';
+		if (!end) return '—';
 		const ms = new Date(end).getTime() - new Date(start).getTime();
 		if (ms < 1000) return `${ms}ms`;
-		return `${(ms / 1000).toFixed(1)}s`;
+		if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+		return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+	}
+
+	function timeAgo(dateStr: string): string {
+		const now = Date.now();
+		const then = new Date(dateStr).getTime();
+		const diff = now - then;
+
+		if (diff < 60000) return 'just now';
+		if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+		if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+		return new Date(dateStr).toLocaleDateString();
+	}
+
+	function badgeClass(status: string): string {
+		if (status === 'completed' || status === 'success') return 'badge-success';
+		if (status === 'running' || status === 'started' || status === 'STARTED') return 'badge-warning';
+		if (status === 'pending' || status === 'PENDING') return 'badge-info';
+		if (status === 'failed') return 'badge-error';
+		return 'badge-ghost';
+	}
+
+	function jobSeasons(job: Job): string {
+		const seasons = job.params?.seasons as number[] | undefined;
+		if (!seasons || seasons.length === 0) return '—';
+		if (seasons.length === 1) return String(seasons[0]);
+		return `${Math.min(...seasons)}–${Math.max(...seasons)}`;
+	}
+
+	function jobStrategy(job: Job): string {
+		return (job.params?.strategy as string) ?? '—';
+	}
+
+	function toggleError(id: number) {
+		const next = new Set(expandedErrors);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expandedErrors = next;
 	}
 
 	onMount(loadJobs);
 	onDestroy(stopPolling);
 </script>
 
-<div class="page-header">
-	<h1>// IMPORT JOBS</h1>
-	<div style="display: flex; gap: 0.75rem; align-items: center">
+<div class="flex justify-between items-center mb-4">
+	<h1 class="text-2xl font-bold text-primary tracking-wide">// IMPORT JOBS</h1>
+	<div class="flex gap-3 items-center">
 		{#if hasActiveJobs}
-			<span class="pulse-dot"></span>
-			<span style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--warning, #f0ad4e)">
-				JOBS RUNNING...
+			<span class="loading loading-ring loading-xs text-warning"></span>
+			<span class="text-xs text-warning font-semibold">
+				{summary.running} running · {summary.pending} queued
 			</span>
 		{/if}
 		{#if importMessage}
-			<span style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--success)">
-				{importMessage}
-			</span>
+			<span class="text-xs text-success font-semibold">{importMessage}</span>
 		{/if}
-		<button class="primary" onclick={() => showImportForm = !showImportForm}>
-			{showImportForm ? 'CANCEL' : '+ NEW IMPORT'}
+		<button class="btn btn-primary btn-sm" onclick={() => showImportForm = !showImportForm}>
+			{showImportForm ? 'Cancel' : '+ New Import'}
 		</button>
 	</div>
 </div>
 
 {#if !loading}
-	<div class="stats-grid">
-		<div class="card">
-			<h3>» ROSTER</h3>
-			<div class="stat-value">{totalPlayers.toLocaleString()}</div>
-			<p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem">NFL PLAYERS</p>
+	<!-- Queue Dashboard -->
+	<div class="grid grid-cols-5 gap-3 mb-5">
+		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
+			<div class="text-xs font-semibold opacity-50 mb-0.5">Queued</div>
+			<div class="text-xl font-bold text-info">{summary.pending}</div>
 		</div>
-		<div class="card">
-			<h3>» IMPORTS</h3>
-			<div class="stat-value">{total}</div>
-			<p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem">COMPLETED JOBS</p>
+		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
+			<div class="text-xs font-semibold opacity-50 mb-0.5">Running</div>
+			<div class="text-xl font-bold text-warning">{summary.running}</div>
 		</div>
-		<div class="card">
-			<h3>» LATEST</h3>
-			{#if latestJob}
-				<div class="stat-value" style="font-size: 0.7rem; margin-bottom: 0.5rem">
-					<span class="badge {latestJob.status}">{latestJob.status}</span>
-				</div>
-				<p style="color: var(--text-muted); font-size: 0.9rem">
-					{latestJob.records_fetched.toLocaleString()} FETCHED
-				</p>
-				<p style="color: var(--text-muted); font-size: 0.85rem">
-					{new Date(latestJob.started_at).toLocaleDateString()}
-				</p>
-			{:else}
-				<div class="stat-value" style="font-size: 0.6rem; color: var(--text-muted)">AWAITING</div>
-			{/if}
+		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
+			<div class="text-xs font-semibold opacity-50 mb-0.5">Completed</div>
+			<div class="text-xl font-bold text-success">{summary.completed}</div>
+		</div>
+		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
+			<div class="text-xs font-semibold opacity-50 mb-0.5">Failed</div>
+			<div class="text-xl font-bold text-error">{summary.failed}</div>
+		</div>
+		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
+			<div class="text-xs font-semibold opacity-50 mb-0.5">Players</div>
+			<div class="text-xl font-bold text-primary">{totalPlayers.toLocaleString()}</div>
 		</div>
 	</div>
 {/if}
 
 {#if showImportForm}
-	<!-- Batch Presets -->
-	<div class="card" style="margin-bottom: 1rem">
-		<h3>» QUICK BATCH IMPORT</h3>
-		<div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.75rem; flex-wrap: wrap">
-			<select bind:value={batchSeason} style="width: 100px">
-				{#each SEASONS as year}
-					<option value={year}>{year}</option>
-				{/each}
-			</select>
-			{#each IMPORT_PRESETS as preset, i}
-				<button
-					class="primary"
-					onclick={() => triggerBatchPreset(i)}
-					disabled={batchImporting}
-					title={preset.desc}
-				>
-					⚡ {preset.label}
-				</button>
-			{/each}
-		</div>
-		{#if batchMessage}
-			<p style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--success); margin-top: 0.5rem">
-				{batchMessage}
-			</p>
-		{/if}
-		<p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem">
-			{IMPORT_PRESETS.map(p => p.label + ': ' + p.desc).join(' · ')}
-		</p>
-	</div>
+	<div class="card bg-base-200 shadow-md border border-base-300 mb-5">
+		<div class="card-body p-4 gap-0">
+			<!-- Tabs -->
+			<div role="tablist" class="tabs tabs-bordered mb-3">
+				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'batch'} onclick={() => importTab = 'batch'}>Quick Batch</button>
+				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'full'} onclick={() => importTab = 'full'}>Full Import</button>
+				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'custom'} onclick={() => importTab = 'custom'}>Custom</button>
+			</div>
 
-	<!-- Single Import Form -->
-	<div class="card" style="margin-bottom: 1.5rem; max-width: 500px">
-		<h3>» CONFIGURE IMPORT</h3>
-		<div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 0.75rem">
-			<div>
-				<label style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem">
-					DATA TYPE
-				</label>
-				<select bind:value={selectedCollector} style="width: 100%">
-					{#each COLLECTOR_TYPES as ct}
-						<option value={ct.value}>{ct.label}</option>
-					{/each}
-				</select>
-			</div>
-			<div>
-				<label style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem">
-					SEASON
-				</label>
-				<select bind:value={selectedSeason} style="width: 100%">
-					{#each SEASONS as year}
-						<option value={year}>{year}</option>
-					{/each}
-				</select>
-			</div>
-			{#if selectedCollector === 'nflreadpy_stats'}
-				<div>
-					<label style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem">
-						SUMMARY LEVEL
-					</label>
-					<select bind:value={selectedSummaryLevel} style="width: 100%">
-						{#each SUMMARY_LEVELS as sl}
-							<option value={sl.value}>{sl.label}</option>
-						{/each}
+			<!-- Quick Batch -->
+			{#if importTab === 'batch'}
+				<div class="flex flex-wrap gap-2 items-center">
+					<select class="select select-bordered select-xs w-20" bind:value={batchSeason}>
+						{#each SEASONS as year}<option value={year}>{year}</option>{/each}
 					</select>
-				</div>
-			{/if}
-			{#if selectedCollector === 'nflreadpy_ff_rankings'}
-				<div>
-					<label style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem">
-						RANKING TYPE
-					</label>
-					<select bind:value={selectedRankType} style="width: 100%">
-						{#each RANK_TYPES as rt}
-							<option value={rt.value}>{rt.label}</option>
-						{/each}
-					</select>
-				</div>
-			{/if}
-			<div>
-				<label style="font-family: var(--font-pixel); font-size: 0.4rem; color: var(--text-muted); display: block; margin-bottom: 0.4rem">
-					STRATEGY
-				</label>
-				<select bind:value={selectedStrategy} style="width: 100%">
-					{#each strategies as s}
-						<option value={s.value}>{s.label} — {s.desc}</option>
+					{#each IMPORT_PRESETS as preset, i}
+						<button class="btn btn-primary btn-xs" onclick={() => triggerBatchPreset(i)} disabled={batchImporting} title={preset.desc}>
+							⚡ {preset.label}
+						</button>
 					{/each}
-				</select>
-			</div>
-			<button class="primary" onclick={triggerImport} disabled={importing} style="align-self: flex-start">
-				{importing ? 'DISPATCHING...' : 'LAUNCH IMPORT'}
-			</button>
+				</div>
+				<p class="text-xs opacity-40 mt-2">{IMPORT_PRESETS.map(p => p.label + ': ' + p.desc).join(' · ')}</p>
+				{#if batchMessage}<p class="text-xs text-success font-semibold mt-1">{batchMessage}</p>{/if}
+
+			<!-- Full Import -->
+			{:else if importTab === 'full'}
+				<p class="text-xs opacity-50 mb-2">All data (rosters, stats, schedules, rankings) — merge strategy, safe to re-run.</p>
+				<div class="flex flex-wrap gap-2 items-center">
+					<span class="text-xs font-semibold opacity-50">From</span>
+					<select class="select select-bordered select-xs w-20" bind:value={fullFromSeason}>
+						{#each SEASONS as year}<option value={year}>{year}</option>{/each}
+					</select>
+					<span class="text-xs font-semibold opacity-50">To</span>
+					<select class="select select-bordered select-xs w-20" bind:value={fullToSeason}>
+						{#each SEASONS as year}<option value={year}>{year}</option>{/each}
+					</select>
+					<button class="btn btn-primary btn-xs" onclick={triggerFullImport} disabled={fullImporting}>
+						{fullImporting ? '⏳ Running...' : '🚀 Import All'}
+					</button>
+					<span class="text-xs opacity-40">
+						{Math.abs(fullToSeason - fullFromSeason) + 1} szn × 4 = {(Math.abs(fullToSeason - fullFromSeason) + 1) * 4} jobs
+					</span>
+				</div>
+				{#if fullImportPhase}<p class="text-xs text-warning font-semibold mt-1">⏳ {fullImportPhase}</p>{/if}
+				{#if fullImportMessage}<p class="text-xs text-success font-semibold mt-1">✓ {fullImportMessage}</p>{/if}
+
+			<!-- Custom -->
+			{:else}
+				<div class="grid grid-cols-2 gap-x-3 gap-y-2 max-w-md">
+					<div>
+						<div class="text-xs font-semibold opacity-50 mb-0.5">Data Type</div>
+						<select class="select select-bordered select-xs w-full" bind:value={selectedCollector}>
+							{#each COLLECTOR_TYPES as ct}<option value={ct.value}>{ct.label}</option>{/each}
+						</select>
+					</div>
+					<div>
+						<div class="text-xs font-semibold opacity-50 mb-0.5">Season</div>
+						<select class="select select-bordered select-xs w-full" bind:value={selectedSeason}>
+							{#each SEASONS as year}<option value={year}>{year}</option>{/each}
+						</select>
+					</div>
+					{#if selectedCollector === 'nflreadpy_stats'}
+						<div>
+							<div class="text-xs font-semibold opacity-50 mb-0.5">Summary</div>
+							<select class="select select-bordered select-xs w-full" bind:value={selectedSummaryLevel}>
+								{#each SUMMARY_LEVELS as sl}<option value={sl.value}>{sl.label}</option>{/each}
+							</select>
+						</div>
+					{/if}
+					{#if selectedCollector === 'nflreadpy_ff_rankings'}
+						<div>
+							<div class="text-xs font-semibold opacity-50 mb-0.5">Rank Type</div>
+							<select class="select select-bordered select-xs w-full" bind:value={selectedRankType}>
+								{#each RANK_TYPES as rt}<option value={rt.value}>{rt.label}</option>{/each}
+							</select>
+						</div>
+					{/if}
+					<div>
+						<div class="text-xs font-semibold opacity-50 mb-0.5">Strategy</div>
+						<select class="select select-bordered select-xs w-full" bind:value={selectedStrategy}>
+							{#each strategies as s}<option value={s.value}>{s.label} — {s.desc}</option>{/each}
+						</select>
+					</div>
+				</div>
+				<button class="btn btn-primary btn-xs mt-3 self-start" onclick={triggerImport} disabled={importing}>
+					{importing ? 'Dispatching...' : 'Launch Import'}
+				</button>
+			{/if}
 		</div>
 	</div>
 {/if}
 
 {#if loading}
-	<div class="card" style="text-align: center; padding: 2rem">
-		<p style="font-family: var(--font-pixel); font-size: 0.6rem; color: var(--accent)">
-			QUERYING LOGS...
-		</p>
+	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+		<span class="loading loading-dots loading-md text-primary"></span>
+		<p class="text-sm opacity-60 mt-2">Querying logs...</p>
 	</div>
 {:else}
-	<div class="card" style="padding: 0; overflow: hidden">
-		<table>
-			<thead>
-				<tr>
-					<th>ID</th>
-					<th>TYPE</th>
-					<th>STATUS</th>
-					<th>FETCHED</th>
-					<th>INSERTED</th>
-					<th>UPDATED</th>
-					<th>DURATION</th>
-					<th>STARTED</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each jobs as job}
-					<tr class:job-active={job.status === 'running' || job.status === 'pending' || job.status === 'PENDING' || job.status === 'STARTED'}>
-						<td style="color: var(--accent)">#{job.id}</td>
-						<td>{job.collector_type}</td>
-						<td>
-							<span class="badge {job.status}">{job.status}</span>
-						</td>
-						<td>{job.records_fetched.toLocaleString()}</td>
-						<td>{job.records_inserted.toLocaleString()}</td>
-						<td>{job.records_updated.toLocaleString()}</td>
-						<td>{formatDuration(job.started_at, job.finished_at)}</td>
-						<td>{new Date(job.started_at).toLocaleString()}</td>
-					</tr>
-				{:else}
+	<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
+		<div class="table-scroll-wrap">
+			<table class="table table-zebra table-pin-rows table-sm table-responsive">
+				<thead>
 					<tr>
-						<td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem; font-family: var(--font-pixel); font-size: 0.55rem">
-							NO JOBS LOGGED. CLICK "+ NEW IMPORT" TO BEGIN.
-						</td>
+						<th class="w-12">ID</th>
+						<th>Type</th>
+						<th>Season</th>
+						<th>Strategy</th>
+						<th>Status</th>
+						<th>Records</th>
+						<th>Duration</th>
+						<th>When</th>
 					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each jobs as job}
+						{@const isActive = job.status === 'running' || job.status === 'started' || job.status === 'STARTED'}
+						{@const isPending = job.status === 'pending' || job.status === 'PENDING'}
+						{@const isFailed = job.status === 'failed'}
+						{@const hasProg = isActive && job.progress !== null && job.progress !== undefined}
+						<tr class="hover {isActive ? 'bg-warning/5' : ''} {isPending ? 'bg-info/5' : ''}">
+							<td class="font-mono text-xs opacity-60">#{job.id}</td>
+							<td>
+								<span class="font-semibold text-sm">{COLLECTOR_LABELS[job.collector_type] ?? job.collector_type}</span>
+							</td>
+							<td class="font-mono text-sm">{jobSeasons(job)}</td>
+							<td>
+								<span class="text-xs opacity-70">{jobStrategy(job)}</span>
+							</td>
+							<td>
+								<div class="flex flex-col gap-0.5">
+									<span class="badge {badgeClass(job.status)} badge-sm">{job.status}</span>
+									{#if hasProg}
+										<progress class="progress progress-warning w-16 h-1.5" value={job.progress ?? 0} max="1"></progress>
+										<span class="text-[10px] opacity-50">{Math.round((job.progress ?? 0) * 100)}%</span>
+									{/if}
+									{#if isPending}
+										<span class="text-[10px] opacity-40">in queue</span>
+									{/if}
+								</div>
+							</td>
+							<td>
+								{#if isPending}
+									<span class="opacity-30">—</span>
+								{:else}
+									<div class="flex flex-col text-xs leading-tight">
+										<span>{job.records_fetched.toLocaleString()} fetched</span>
+										{#if job.records_inserted > 0}
+											<span class="text-success">+{job.records_inserted.toLocaleString()}</span>
+										{/if}
+										{#if job.records_updated > 0}
+											<span class="text-info">↻{job.records_updated.toLocaleString()}</span>
+										{/if}
+										{#if job.records_skipped > 0}
+											<span class="opacity-40">⊘{job.records_skipped.toLocaleString()}</span>
+										{/if}
+									</div>
+								{/if}
+							</td>
+							<td class="text-sm">{formatDuration(job.started_at, job.finished_at)}</td>
+							<td class="text-xs opacity-60" title={new Date(job.started_at).toLocaleString()}>
+								{timeAgo(job.started_at)}
+							</td>
+						</tr>
+						{#if isFailed && job.error_message}
+							<tr class="bg-error/5">
+								<td></td>
+								<td colspan="7">
+									<button class="text-xs text-error cursor-pointer hover:underline" onclick={() => toggleError(job.id)}>
+										{expandedErrors.has(job.id) ? '▼' : '►'} Error details
+									</button>
+									{#if expandedErrors.has(job.id)}
+										<pre class="text-xs text-error mt-1 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">{job.error_message}</pre>
+									{/if}
+								</td>
+							</tr>
+						{/if}
+					{:else}
+						<tr>
+							<td colspan="8" class="text-center opacity-50 py-8">No jobs logged. Click "+ New Import" to begin.</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</div>
 
-	<div class="pagination">
-		<span>{total} JOB{total === 1 ? '' : 'S'} TOTAL</span>
-		<div style="display: flex; gap: 0.5rem">
-			<button onclick={prevPage} disabled={offset === 0}>◄ PREV</button>
-			<button onclick={nextPage} disabled={offset + limit >= total}>NEXT ►</button>
+	<div class="flex justify-between items-center mt-4 text-sm opacity-70">
+		<span>{total} job{total === 1 ? '' : 's'} total</span>
+		<div class="join">
+			<button class="join-item btn btn-sm" onclick={prevPage} disabled={offset === 0}>◄ Prev</button>
+			<button class="join-item btn btn-sm" onclick={nextPage} disabled={offset + limit >= total}>Next ►</button>
 		</div>
 	</div>
 {/if}
-
-<style>
-	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-		gap: 1rem;
-		margin-bottom: 1.5rem;
-	}
-	.stat-value {
-		font-family: var(--font-pixel);
-		font-size: 1.2rem;
-		color: var(--accent);
-		margin-top: 0.5rem;
-	}
-	.pulse-dot {
-		display: inline-block;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--warning, #f0ad4e);
-		animation: pulse 1.2s ease-in-out infinite;
-	}
-	@keyframes pulse {
-		0%, 100% { opacity: 1; transform: scale(1); }
-		50% { opacity: 0.4; transform: scale(0.7); }
-	}
-	tr.job-active {
-		background: rgba(240, 173, 78, 0.08);
-	}
-	tr.job-active td {
-		border-left-color: var(--warning, #f0ad4e);
-	}
-</style>

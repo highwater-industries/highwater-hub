@@ -61,7 +61,7 @@ func (s *PostgresStatStore) ListStats(ctx context.Context, f StatFilter, offset,
 	}
 	defer rows.Close()
 
-	var stats []PlayerStat
+	stats := make([]PlayerStat, 0)
 	for rows.Next() {
 		st, err := scanStatRow(rows)
 		if err != nil {
@@ -142,7 +142,7 @@ func (s *PostgresStatStore) GetLeaders(ctx context.Context, stat string, season,
 	}
 	defer rows.Close()
 
-	var stats []PlayerStat
+	stats := make([]PlayerStat, 0)
 	for rows.Next() {
 		st, err := scanStatRow(rows)
 		if err != nil {

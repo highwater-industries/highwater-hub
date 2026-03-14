@@ -51,7 +51,7 @@ func HandleBatchImport(client *Client) http.HandlerFunc {
 			return
 		}
 
-		var results []BatchImportResult
+		results := make([]BatchImportResult, 0)
 		dispatched, failed := 0, 0
 
 		for _, imp := range req.Imports {
@@ -130,5 +130,22 @@ func HandleListJobs(store Store) http.HandlerFunc {
 			Offset: p.Offset,
 			Limit:  p.Limit,
 		})
+	}
+}
+
+// HandleGetJobSummary returns aggregate status counts from collection_history.
+//
+//	GET /api/jobs/summary
+func HandleGetJobSummary(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		summary, err := store.Summary(r.Context())
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to get job summary",
+			})
+			return
+		}
+
+		httputil.Encode(w, http.StatusOK, summary)
 	}
 }

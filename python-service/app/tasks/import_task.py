@@ -14,6 +14,7 @@ import logging
 from datetime import UTC, date, datetime
 from typing import Any, Dict, List
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import delete, select
 
 from app.celery_app import celery_app
@@ -406,12 +407,24 @@ def _record_history(
             error_message=error_message,
             params=params,
             started_at=started_at or datetime.now(UTC),
-            finished_at=datetime.now(UTC) if status != "running" else None,
-            progress=1.0 if status == "completed" else None,
+            finished_at=datetime.now(UTC) if status not in ("running", "pending") else None,
+            progress=1.0 if status == "completed" else (0.0 if status in ("running", "pending") else None),
         )
         session.add(entry)
         session.commit()
         return entry.id
+
+
+def _update_history(history_id: int, **kwargs: Any) -> None:
+    """Update an existing ``collection_history`` entry in place."""
+    with SyncSession() as session:
+        entry = session.get(CollectionHistory, history_id)
+        if entry is None:
+            logger.warning("collection_history row %d not found for update", history_id)
+            return
+        for key, value in kwargs.items():
+            setattr(entry, key, value)
+        session.commit()
 
 
 # ------------------------------------------------------------------
@@ -426,6 +439,7 @@ def run_import(
     seasons: List[int],
     strategy: str,
     collector_kwargs: Dict[str, Any] | None = None,
+    history_id: int | None = None,
 ) -> Dict[str, Any]:
     """Run the collector pipeline, persist results, and return a summary.
 
@@ -442,6 +456,11 @@ def run_import(
     collector_kwargs : dict | None
         Extra keyword arguments forwarded to the collector constructor
         (e.g. ``summary_level``, ``rank_type``).
+    history_id : int | None
+        If provided, update this existing collection_history row instead
+        of creating a new one.  The ``start_import`` route pre-creates a
+        "pending" row so the job is visible in the UI before the worker
+        picks it up.
 
     Returns
     -------
@@ -452,18 +471,37 @@ def run_import(
         collector_kwargs = {}
 
     task_started = datetime.now(UTC)
+    job_params = {"seasons": seasons, "strategy": strategy, "celery_task_id": self.request.id, **collector_kwargs}
 
     logger.info(
-        "Celery task started: collector=%s seasons=%s strategy=%s",
+        "Celery task started: collector=%s seasons=%s strategy=%s history_id=%s",
         collector_type,
         seasons,
         strategy,
+        history_id,
     )
 
     # Ensure tables exist before writing
     create_tables_sync()
 
-    # Report initial progress
+    # Transition existing "pending" row to "running", or create a fresh one
+    if history_id:
+        _update_history(
+            history_id,
+            status="running",
+            started_at=task_started,
+            progress=0.0,
+            params=job_params,
+        )
+    else:
+        history_id = _record_history(
+            collector_type=collector_type,
+            status="running",
+            params=job_params,
+            started_at=task_started,
+        )
+
+    # Report initial progress via Celery broker
     self.update_state(
         state="PROGRESS",
         meta={
@@ -475,8 +513,9 @@ def run_import(
         },
     )
 
-    # Build a progress callback that pushes state updates to Celery
+    # Build a progress callback that pushes state updates to Celery + DB
     def _progress(current: int, total: int, info: dict) -> None:
+        frac = round(current / total, 2) if total else 0
         self.update_state(
             state="PROGRESS",
             meta={
@@ -486,10 +525,13 @@ def run_import(
                 "current_season": info.get("season"),
                 "seasons_completed": current,
                 "seasons_total": total,
-                "progress": round(current / total, 2) if total else 0,
+                "progress": frac,
                 "total_players_so_far": info.get("total_players_so_far", 0),
             },
         )
+        # Update progress in the database so the list endpoint reflects it
+        if history_id:
+            _update_history(history_id, progress=frac)
 
     # Create the collector
     try:
@@ -501,27 +543,40 @@ def run_import(
         )
     except ValueError as exc:
         logger.error("Failed to create collector: %s", exc)
-        _record_history(
-            collector_type=collector_type,
+        _update_history(
+            history_id,
             status="failed",
             error_message=str(exc),
-            params={"seasons": seasons, "strategy": strategy, **collector_kwargs},
-            started_at=task_started,
+            finished_at=datetime.now(UTC),
         )
         return {"status": "failed", "error": str(exc)}
 
     # Run the async pipeline inside a one-shot event loop
-    result = asyncio.run(collector.collect())
+    try:
+        result = asyncio.run(collector.collect())
+    except SoftTimeLimitExceeded:
+        msg = (
+            f"Task timed out after soft limit "
+            f"({celery_app.conf.task_soft_time_limit}s) "
+            f"for {collector_type} seasons={seasons}"
+        )
+        logger.error(msg)
+        _update_history(
+            history_id,
+            status="failed",
+            error_message=msg,
+            finished_at=datetime.now(UTC),
+        )
+        return {"status": "failed", "error": msg}
 
     if result is None:
         msg = f"Collection failed for {collector_type}. Check worker logs."
         logger.error(msg)
-        _record_history(
-            collector_type=collector_type,
+        _update_history(
+            history_id,
             status="failed",
             error_message=msg,
-            params={"seasons": seasons, "strategy": strategy, **collector_kwargs},
-            started_at=task_started,
+            finished_at=datetime.now(UTC),
         )
         return {"status": "failed", "error": msg}
 
@@ -530,7 +585,23 @@ def run_import(
         collector_type, (_persist_players, "players")
     )
     records: list[dict] = result.get(data_key, [])
-    counters = persist_fn(records, strategy, collector_type)
+    try:
+        counters = persist_fn(records, strategy, collector_type)
+    except SoftTimeLimitExceeded:
+        msg = (
+            f"Task timed out during DB persist "
+            f"({celery_app.conf.task_soft_time_limit}s) "
+            f"for {collector_type} seasons={seasons}"
+        )
+        logger.error(msg)
+        _update_history(
+            history_id,
+            status="failed",
+            error_message=msg,
+            finished_at=datetime.now(UTC),
+        )
+        return {"status": "failed", "error": msg}
+
     logger.info(
         "Persisted %d %s: inserted=%d updated=%d skipped=%d",
         len(records),
@@ -540,16 +611,16 @@ def run_import(
         counters["skipped"],
     )
 
-    # Record the run in collection_history
-    _record_history(
-        collector_type=collector_type,
+    # Update the collection_history row to completed
+    _update_history(
+        history_id,
         status="completed",
         records_fetched=len(records),
         records_inserted=counters["inserted"],
         records_updated=counters["updated"],
         records_skipped=counters["skipped"],
-        params={"seasons": seasons, "strategy": strategy, **collector_kwargs},
-        started_at=task_started,
+        finished_at=datetime.now(UTC),
+        progress=1.0,
     )
 
     return {

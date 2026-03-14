@@ -111,115 +111,111 @@
 	onMount(loadRankings);
 </script>
 
-<div class="page-header">
-	<h1>// FANTASY RANKINGS</h1>
-	<span style="font-family: var(--font-pixel); font-size: 0.55rem; color: var(--text-muted)">
-		{total.toLocaleString()} RANKINGS
-	</span>
+<div class="flex justify-between items-center mb-4">
+	<h1 class="text-2xl font-bold text-primary tracking-wide">// FANTASY RANKINGS</h1>
+	<span class="text-sm opacity-60">{total.toLocaleString()} rankings</span>
 </div>
 
-<div class="filters">
+<div class="flex flex-wrap gap-2 mb-4 items-center">
 	<input
 		type="text"
-		placeholder="SEARCH NAME..."
+		placeholder="Search name..."
+		class="input input-bordered input-sm w-44"
 		bind:value={search}
 		onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 	/>
-	<select bind:value={rankType} onchange={applyFilters}>
-		<option value="">ALL TYPES</option>
+	<select class="select select-bordered select-sm" bind:value={rankType} onchange={applyFilters}>
+		<option value="">All Types</option>
 		{#each RANK_TYPES as rt}
 			<option value={rt.value}>{rt.label}</option>
 		{/each}
 	</select>
-	<select bind:value={pos} onchange={applyFilters}>
-		<option value="">ALL POS</option>
+	<select class="select select-bordered select-sm" bind:value={pos} onchange={applyFilters}>
+		<option value="">All Pos</option>
 		{#each POSITIONS as p}
 			<option value={p.abbr}>{p.abbr}</option>
 		{/each}
 	</select>
-	<select bind:value={team} onchange={applyFilters}>
-		<option value="">ALL TEAMS</option>
+	<select class="select select-bordered select-sm" bind:value={team} onchange={applyFilters}>
+		<option value="">All Teams</option>
 		{#each NFL_TEAMS as t}
 			<option value={t.abbr}>{t.abbr}</option>
 		{/each}
 	</select>
-	<select bind:value={season} onchange={applyFilters}>
-		<option value={undefined}>ALL SEASONS</option>
+	<select class="select select-bordered select-sm" bind:value={season} onchange={applyFilters}>
+		<option value={undefined}>All Seasons</option>
 		{#each SEASONS as year}
 			<option value={year}>{year}</option>
 		{/each}
 	</select>
-	<select bind:value={week} onchange={applyFilters}>
-		<option value={undefined}>ALL WEEKS</option>
+	<select class="select select-bordered select-sm" bind:value={week} onchange={applyFilters}>
+		<option value={undefined}>All Weeks</option>
 		{#each NFL_WEEKS as w}
-			<option value={w}>WK {w}</option>
+			<option value={w}>Wk {w}</option>
 		{/each}
 	</select>
-	<select bind:value={source} onchange={applyFilters}>
-		<option value="">ALL SOURCES</option>
+	<select class="select select-bordered select-sm" bind:value={source} onchange={applyFilters}>
+		<option value="">All Sources</option>
 		{#each SOURCES as src}
 			<option value={src}>{src}</option>
 		{/each}
 	</select>
-	<button onclick={applyFilters}>SCAN</button>
-	<button onclick={clearFilters}>RESET</button>
+	<button class="btn btn-sm" onclick={applyFilters}>Scan</button>
+	<button class="btn btn-ghost btn-sm" onclick={clearFilters}>Reset</button>
 </div>
 
 {#if loading}
-	<div class="card" style="text-align: center; padding: 2rem">
-		<p style="font-family: var(--font-pixel); font-size: 0.6rem; color: var(--accent)">LOADING RANKINGS...</p>
+	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+		<span class="loading loading-dots loading-md text-primary"></span>
+		<p class="text-sm opacity-60 mt-2">Loading rankings...</p>
 	</div>
 {:else}
-	<div class="card" class:table-fetching={fetching} style="padding: 0; overflow-x: auto">
-		<table>
-			<thead>
-				<tr>
-					<th class="sortable" style="text-align: right" onclick={() => toggleSort('rank')}>RANK{sortIndicator('rank')}</th>
-					<th class="sortable" onclick={() => toggleSort('player_name')}>PLAYER{sortIndicator('player_name')}</th>
-					<th class="sortable" onclick={() => toggleSort('pos')}>POS{sortIndicator('pos')}</th>
-					<th class="sortable" onclick={() => toggleSort('team')}>TEAM{sortIndicator('team')}</th>
-					<th class="sortable" style="text-align: right" onclick={() => toggleSort('ecr')}>ECR{sortIndicator('ecr')}</th>
-					<th class="sortable" style="text-align: right" onclick={() => toggleSort('sd')}>SD{sortIndicator('sd')}</th>
-					<th class="sortable" style="text-align: right" onclick={() => toggleSort('best')}>BEST{sortIndicator('best')}</th>
-					<th class="sortable" style="text-align: right" onclick={() => toggleSort('worst')}>WORST{sortIndicator('worst')}</th>
-					<th class="sortable" style="text-align: right" onclick={() => toggleSort('avg')}>AVG{sortIndicator('avg')}</th>
-					<th>TYPE</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each rankings as r}
+	<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+		<div class="table-scroll-wrap">
+			<table class="table table-zebra table-pin-rows table-responsive">
+				<thead>
 					<tr>
-						<td style="text-align: right; font-family: var(--font-pixel); font-size: 0.55rem; color: var(--accent)">
-							{fmtRank(r.rank)}
-						</td>
-						<td><strong style="color: var(--accent)">{r.player_name}</strong></td>
-						<td>{r.pos ?? '—'}</td>
-						<td>{r.team ?? '—'}</td>
-						<td style="text-align: right">{fmtDec(r.ecr)}</td>
-						<td style="text-align: right">{fmtDec(r.sd)}</td>
-						<td style="text-align: right">{fmtRank(r.best)}</td>
-						<td style="text-align: right">{fmtRank(r.worst)}</td>
-						<td style="text-align: right">{fmtDec(r.avg)}</td>
-						<td>
-							<span class="badge">{r.rank_type ?? '—'}</span>
-						</td>
+						<th class="sortable text-right" onclick={() => toggleSort('rank')}>Rank{sortIndicator('rank')}</th>
+						<th class="sortable" onclick={() => toggleSort('player_name')}>Player{sortIndicator('player_name')}</th>
+						<th class="sortable" onclick={() => toggleSort('pos')}>Pos{sortIndicator('pos')}</th>
+						<th class="sortable" onclick={() => toggleSort('team')}>Team{sortIndicator('team')}</th>
+						<th class="sortable text-right" onclick={() => toggleSort('ecr')}>ECR{sortIndicator('ecr')}</th>
+						<th class="sortable text-right" onclick={() => toggleSort('sd')}>SD{sortIndicator('sd')}</th>
+						<th class="sortable text-right" onclick={() => toggleSort('best')}>Best{sortIndicator('best')}</th>
+						<th class="sortable text-right" onclick={() => toggleSort('worst')}>Worst{sortIndicator('worst')}</th>
+						<th class="sortable text-right" onclick={() => toggleSort('avg')}>Avg{sortIndicator('avg')}</th>
+						<th>Type</th>
 					</tr>
-				{:else}
-					<tr>
-						<td colspan="10" style="text-align: center; color: var(--text-muted); padding: 2rem; font-family: var(--font-pixel); font-size: 0.55rem">
-							NO RANKING DATA
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each rankings as r}
+						<tr class="hover">
+							<td class="text-right font-bold text-accent">{fmtRank(r.rank)}</td>
+							<td class="font-bold text-primary">{r.player_name}</td>
+							<td>{r.pos ?? '—'}</td>
+							<td>{r.team ?? '—'}</td>
+							<td class="text-right">{fmtDec(r.ecr)}</td>
+							<td class="text-right">{fmtDec(r.sd)}</td>
+							<td class="text-right">{fmtRank(r.best)}</td>
+							<td class="text-right">{fmtRank(r.worst)}</td>
+							<td class="text-right">{fmtDec(r.avg)}</td>
+							<td><span class="badge badge-ghost badge-sm">{r.rank_type ?? '—'}</span></td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="10" class="text-center opacity-50 py-8">No ranking data</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</div>
 
-	<div class="pagination">
-		<span>{offset + 1}–{Math.min(offset + limit, total)} OF {total.toLocaleString()}</span>
-		<div style="display: flex; gap: 0.5rem">
-			<button onclick={prevPage} disabled={offset === 0}>◄ PREV</button>
-			<button onclick={nextPage} disabled={offset + limit >= total}>NEXT ►</button>
+	<div class="flex justify-between items-center mt-4 text-sm opacity-70">
+		<span>{offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()}</span>
+		<div class="join">
+			<button class="join-item btn btn-sm" onclick={prevPage} disabled={offset === 0}>◄ Prev</button>
+			<button class="join-item btn btn-sm" onclick={nextPage} disabled={offset + limit >= total}>Next ►</button>
 		</div>
 	</div>
 {/if}

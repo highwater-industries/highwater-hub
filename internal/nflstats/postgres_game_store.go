@@ -65,7 +65,7 @@ func (s *PostgresGameStore) ListGames(ctx context.Context, f GameFilter, offset,
 	}
 	defer rows.Close()
 
-	var games []Game
+	games := make([]Game, 0)
 	for rows.Next() {
 		g, err := scanGameRow(rows)
 		if err != nil {

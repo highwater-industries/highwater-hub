@@ -92,94 +92,111 @@
 	onMount(loadPlayers);
 </script>
 
-<div class="page-header">
-	<h1>// PLAYERS</h1>
-	<span style="font-family: var(--font-pixel); font-size: 0.55rem; color: var(--text-muted)">
-		{total.toLocaleString()} IN ROSTER
-	</span>
+<div class="flex justify-between items-center mb-4">
+	<h1 class="text-2xl font-bold text-primary tracking-wide">// PLAYERS</h1>
+	<span class="text-sm opacity-60">{total.toLocaleString()} IN ROSTER</span>
 </div>
 
-<div class="filters">
+<div class="flex flex-wrap gap-2 mb-4 items-center">
 	<input
 		type="text"
-		placeholder="SEARCH NAME..."
+		placeholder="Search name..."
+		class="input input-bordered input-sm w-48"
 		bind:value={search}
 		onkeydown={(e) => e.key === 'Enter' && applyFilters()}
 	/>
-	<select bind:value={team} onchange={applyFilters}>
-		<option value="">ALL TEAMS</option>
+	<select class="select select-bordered select-sm" bind:value={team} onchange={applyFilters}>
+		<option value="">All Teams</option>
 		{#each NFL_TEAMS as t}
 			<option value={t.abbr}>{t.abbr} — {t.name}</option>
 		{/each}
 	</select>
-	<select bind:value={position} onchange={applyFilters}>
-		<option value="">ALL POS</option>
+	<select class="select select-bordered select-sm" bind:value={position} onchange={applyFilters}>
+		<option value="">All Pos</option>
 		{#each POSITIONS as pos}
 			<option value={pos.abbr}>{pos.abbr} — {pos.name}</option>
 		{/each}
 	</select>
-	<select bind:value={source} onchange={applyFilters}>
-		<option value="">ALL SOURCES</option>
+	<select class="select select-bordered select-sm" bind:value={source} onchange={applyFilters}>
+		<option value="">All Sources</option>
 		{#each SOURCES as src}
 			<option value={src}>{src}</option>
 		{/each}
 	</select>
-	<button onclick={applyFilters}>SCAN</button>
-	<button onclick={clearFilters}>RESET</button>
+	<button class="btn btn-sm" onclick={applyFilters}>Scan</button>
+	<button class="btn btn-ghost btn-sm" onclick={clearFilters}>Reset</button>
 </div>
 
 {#if loading}
-	<div class="card" style="text-align: center; padding: 2rem">
-		<p style="font-family: var(--font-pixel); font-size: 0.6rem; color: var(--accent)">
-			SCANNING DATABASE...
-		</p>
+	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+		<span class="loading loading-dots loading-md text-primary"></span>
+		<p class="text-sm opacity-60 mt-2">Scanning database...</p>
 	</div>
 {:else}
-	<div class="card" class:table-fetching={fetching} style="padding: 0; overflow: hidden">
-		<table>
-			<thead>
-				<tr>
-					<th class="sortable" onclick={() => toggleSort('player_name')}>NAME{sortIndicator('player_name')}</th>
-					<th class="sortable" onclick={() => toggleSort('team')}>TEAM{sortIndicator('team')}</th>
-					<th class="sortable" onclick={() => toggleSort('player_position')}>POS{sortIndicator('player_position')}</th>
-					<th>COLLEGE</th>
-					<th>STATUS</th>
-					<th>#</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each players as player}
+	<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+		<div class="table-scroll-wrap">
+			<table class="table table-zebra table-pin-rows table-responsive">
+				<thead>
 					<tr>
-						<td>
-							<strong style="color: var(--accent)">{player.player_name}</strong>
-							<div style="font-size: 0.85rem; color: var(--text-muted)">{player.player_id}</div>
-						</td>
-						<td>{player.team}</td>
-						<td>{player.player_position}</td>
-						<td>{player.metadata?.college ?? '—'}</td>
-						<td>
-							<span class="badge" class:success={player.metadata?.status === 'ACT'}>
-								{player.metadata?.status ?? '—'}
-							</span>
-						</td>
-						<td>{player.metadata?.jersey_number ?? '—'}</td>
+						<th class="sortable" onclick={() => toggleSort('player_name')}>Name{sortIndicator('player_name')}</th>
+						<th class="sortable" onclick={() => toggleSort('team')}>Team{sortIndicator('team')}</th>
+						<th class="sortable" onclick={() => toggleSort('player_position')}>Pos{sortIndicator('player_position')}</th>
+						<th>College</th>
+						<th>Status</th>
+						<th>#</th>
 					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem; font-family: var(--font-pixel); font-size: 0.55rem">
-							NO RECORDS FOUND
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each players as player}
+						<tr class="hover">
+							<td>
+								<div class="flex items-center gap-3">
+									{#if player.metadata?.headshot_url}
+										<div class="avatar">
+											<div class="w-10 h-10 rounded-full bg-base-300">
+												<img src={player.metadata.headshot_url} alt={player.player_name} loading="lazy" />
+											</div>
+										</div>
+									{:else}
+										<div class="avatar placeholder">
+											<div class="w-10 h-10 rounded-full bg-base-300 text-base-content/40">
+												<span class="text-xs">{player.player_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</span>
+											</div>
+										</div>
+									{/if}
+									<div>
+										<div class="font-bold text-primary">{player.player_name}</div>
+										<div class="text-xs opacity-40">{player.player_id}</div>
+									</div>
+								</div>
+							</td>
+							<td>{player.team}</td>
+							<td>{player.player_position}</td>
+							<td>{player.metadata?.college ?? '—'}</td>
+							<td>
+								{#if player.metadata?.status === 'ACT'}
+									<span class="badge badge-success badge-sm">{player.metadata.status}</span>
+								{:else}
+									<span class="badge badge-ghost badge-sm">{player.metadata?.status ?? '—'}</span>
+								{/if}
+							</td>
+							<td>{player.metadata?.jersey_number ?? '—'}</td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="6" class="text-center opacity-50 py-8">No records found</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</div>
 
-	<div class="pagination">
-		<span>{offset + 1}–{Math.min(offset + limit, total)} OF {total.toLocaleString()}</span>
-		<div style="display: flex; gap: 0.5rem">
-			<button onclick={prevPage} disabled={offset === 0}>◄ PREV</button>
-			<button onclick={nextPage} disabled={offset + limit >= total}>NEXT ►</button>
+	<div class="flex justify-between items-center mt-4 text-sm opacity-70">
+		<span>{offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()}</span>
+		<div class="join">
+			<button class="join-item btn btn-sm" onclick={prevPage} disabled={offset === 0}>◄ Prev</button>
+			<button class="join-item btn btn-sm" onclick={nextPage} disabled={offset + limit >= total}>Next ►</button>
 		</div>
 	</div>
 {/if}

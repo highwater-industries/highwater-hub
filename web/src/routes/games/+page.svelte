@@ -94,89 +94,86 @@
 	onMount(loadGames);
 </script>
 
-<div class="page-header">
-	<h1>// GAMES</h1>
-	<span style="font-family: var(--font-pixel); font-size: 0.55rem; color: var(--text-muted)">
-		{total.toLocaleString()} GAMES
-	</span>
+<div class="flex justify-between items-center mb-4">
+	<h1 class="text-2xl font-bold text-primary tracking-wide">// GAMES</h1>
+	<span class="text-sm opacity-60">{total.toLocaleString()} games</span>
 </div>
 
-<div class="filters">
-	<select bind:value={season} onchange={applyFilters}>
-		<option value={undefined}>ALL SEASONS</option>
+<div class="flex flex-wrap gap-2 mb-4 items-center">
+	<select class="select select-bordered select-sm" bind:value={season} onchange={applyFilters}>
+		<option value={undefined}>All Seasons</option>
 		{#each SEASONS as year}
 			<option value={year}>{year}</option>
 		{/each}
 	</select>
-	<select bind:value={week} onchange={applyFilters}>
-		<option value={undefined}>ALL WEEKS</option>
+	<select class="select select-bordered select-sm" bind:value={week} onchange={applyFilters}>
+		<option value={undefined}>All Weeks</option>
 		{#each NFL_WEEKS as w}
-			<option value={w}>WK {w}</option>
+			<option value={w}>Wk {w}</option>
 		{/each}
 	</select>
-	<select bind:value={team} onchange={applyFilters}>
-		<option value="">ALL TEAMS</option>
+	<select class="select select-bordered select-sm" bind:value={team} onchange={applyFilters}>
+		<option value="">All Teams</option>
 		{#each NFL_TEAMS as t}
 			<option value={t.abbr}>{t.abbr} — {t.name}</option>
 		{/each}
 	</select>
-	<button onclick={applyFilters}>SCAN</button>
-	<button onclick={clearFilters}>RESET</button>
+	<button class="btn btn-sm" onclick={applyFilters}>Scan</button>
+	<button class="btn btn-ghost btn-sm" onclick={clearFilters}>Reset</button>
 </div>
 
 {#if loading}
-	<div class="card" style="text-align: center; padding: 2rem">
-		<p style="font-family: var(--font-pixel); font-size: 0.6rem; color: var(--accent)">LOADING SCHEDULE...</p>
+	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+		<span class="loading loading-dots loading-md text-primary"></span>
+		<p class="text-sm opacity-60 mt-2">Loading schedule...</p>
 	</div>
 {:else}
-	<div class="card" class:table-fetching={fetching} style="padding: 0; overflow-x: auto">
-		<table>
-			<thead>
-				<tr>
-					<th class="sortable" onclick={() => toggleSort('gameday')}>DATE{sortIndicator('gameday')}</th>
-					<th class="sortable" onclick={() => toggleSort('season')}>SZN{sortIndicator('season')}</th>
-					<th class="sortable" onclick={() => toggleSort('week')}>WK{sortIndicator('week')}</th>
-					<th>MATCHUP</th>
-					<th class="sortable" style="text-align: center" onclick={() => toggleSort('home_score')}>SCORE{sortIndicator('home_score')}</th>
-					<th>TYPE</th>
-					<th>OT</th>
-					<th>STADIUM</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each games as g}
+	<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+		<div class="table-scroll-wrap">
+			<table class="table table-zebra table-pin-rows table-responsive">
+				<thead>
 					<tr>
-						<td style="white-space: nowrap">{g.gameday ?? '—'}</td>
-						<td>{g.season ?? '—'}</td>
-						<td>{g.week ?? '—'}</td>
-						<td>
-							<strong style="color: var(--accent)">{g.away_team ?? '?'}</strong>
-							<span style="color: var(--text-muted)">&nbsp;@&nbsp;</span>
-							<strong>{g.home_team ?? '?'}</strong>
-						</td>
-						<td style="text-align: center; font-family: var(--font-pixel); font-size: 0.55rem; color: var(--accent)">
-							{formatScore(g)}
-						</td>
-						<td>{g.game_type ?? '—'}</td>
-						<td>{g.overtime ? '⚡' : ''}</td>
-						<td style="color: var(--text-muted); font-size: 0.9rem">{g.stadium ?? '—'}</td>
+						<th class="sortable" onclick={() => toggleSort('gameday')}>Date{sortIndicator('gameday')}</th>
+						<th class="sortable" onclick={() => toggleSort('season')}>Szn{sortIndicator('season')}</th>
+						<th class="sortable" onclick={() => toggleSort('week')}>Wk{sortIndicator('week')}</th>
+						<th>Matchup</th>
+						<th class="sortable text-center" onclick={() => toggleSort('home_score')}>Score{sortIndicator('home_score')}</th>
+						<th>Type</th>
+						<th>OT</th>
+						<th>Stadium</th>
 					</tr>
-				{:else}
-					<tr>
-						<td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem; font-family: var(--font-pixel); font-size: 0.55rem">
-							NO GAMES FOUND
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each games as g}
+						<tr class="hover">
+							<td class="whitespace-nowrap">{g.gameday ?? '—'}</td>
+							<td>{g.season ?? '—'}</td>
+							<td>{g.week ?? '—'}</td>
+							<td>
+								<span class="font-bold text-primary">{g.away_team ?? '?'}</span>
+								<span class="opacity-40"> @ </span>
+								<span class="font-bold">{g.home_team ?? '?'}</span>
+							</td>
+							<td class="text-center font-bold text-accent">{formatScore(g)}</td>
+							<td>{g.game_type ?? '—'}</td>
+							<td>{g.overtime ? '⚡' : ''}</td>
+							<td class="opacity-60 text-sm">{g.stadium ?? '—'}</td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="8" class="text-center opacity-50 py-8">No games found</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</div>
 
-	<div class="pagination">
-		<span>{offset + 1}–{Math.min(offset + limit, total)} OF {total.toLocaleString()}</span>
-		<div style="display: flex; gap: 0.5rem">
-			<button onclick={prevPage} disabled={offset === 0}>◄ PREV</button>
-			<button onclick={nextPage} disabled={offset + limit >= total}>NEXT ►</button>
+	<div class="flex justify-between items-center mt-4 text-sm opacity-70">
+		<span>{offset + 1}–{Math.min(offset + limit, total)} of {total.toLocaleString()}</span>
+		<div class="join">
+			<button class="join-item btn btn-sm" onclick={prevPage} disabled={offset === 0}>◄ Prev</button>
+			<button class="join-item btn btn-sm" onclick={nextPage} disabled={offset + limit >= total}>Next ►</button>
 		</div>
 	</div>
 {/if}

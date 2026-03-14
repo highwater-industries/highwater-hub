@@ -61,4 +61,14 @@ type JobRecord struct {
 	StartedAt       string         `json:"started_at"`
 	FinishedAt      *string        `json:"finished_at,omitempty"`
 	Params          map[string]any `json:"params,omitempty"`
+	Progress        *float64       `json:"progress"`
+}
+
+// JobSummary holds aggregate status counts.
+type JobSummary struct {
+	Pending   int `json:"pending"`
+	Running   int `json:"running"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
+	Total     int `json:"total"`
 }
