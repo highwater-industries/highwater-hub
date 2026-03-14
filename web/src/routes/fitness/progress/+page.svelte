@@ -3,6 +3,7 @@
 	import {
 		listFitnessUsers,
 		getUserProgress,
+		getLatestBodyweight,
 		type FitnessUser,
 		type ExerciseProgressCard,
 		type ExerciseHistoryEntry,
@@ -14,6 +15,7 @@
 	let cards: ExerciseProgressCard[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
+	let userBodyweight: number | null = $state(null);
 	let filterCategory = $state('all');
 
 	const difficultyLabels: Record<number, string> = { 1: 'Easy', 2: 'Light', 3: 'Moderate', 4: 'Hard', 5: 'Max' };
@@ -31,7 +33,10 @@
 			if (!activeUser && users.length > 0) {
 				activeUser = users[0];
 			}
-			if (activeUser) await loadProgress();
+			if (activeUser) {
+				await loadBodyweight();
+				await loadProgress();
+			}
 		} catch (e) {
 			error = 'Failed to load users';
 			console.error(e);
@@ -43,7 +48,18 @@
 	function selectUser(user: FitnessUser) {
 		activeUser = user;
 		localStorage.setItem('fitness_user_id', String(user.id));
+		loadBodyweight();
 		loadProgress();
+	}
+
+	async function loadBodyweight() {
+		if (!activeUser) return;
+		try {
+			const entry = await getLatestBodyweight(activeUser.id);
+			userBodyweight = entry?.weight_lbs ?? null;
+		} catch {
+			userBodyweight = null;
+		}
 	}
 
 	async function loadProgress() {
@@ -77,23 +93,51 @@
 		return entry.sets[entry.sets.length - 1];
 	}
 
-	function bestSet(entry: ExerciseHistoryEntry): WorkoutSet | null {
+	/** Effective weight for a set, factoring in bodyweight for bodyweight exercises. */
+	function effectiveWeight(s: WorkoutSet, category: string): number {
+		const w = s.weight ?? 0;
+		if (category === 'bodyweight') {
+			// weight field = added external weight (belt, vest, etc.)
+			return (userBodyweight ?? 0) + w;
+		}
+		return w;
+	}
+
+	function bestSet(entry: ExerciseHistoryEntry, category = 'strength'): WorkoutSet | null {
 		if (!entry.sets || entry.sets.length === 0) return null;
 		let best = entry.sets[0];
 		for (const s of entry.sets) {
-			if ((s.weight ?? 0) > (best.weight ?? 0)) best = s;
-			else if ((s.weight ?? 0) === (best.weight ?? 0) && (s.reps ?? 0) > (best.reps ?? 0)) best = s;
+			const ew = effectiveWeight(s, category);
+			const bw = effectiveWeight(best, category);
+			if (ew > bw) best = s;
+			else if (ew === bw && (s.reps ?? 0) > (best.reps ?? 0)) best = s;
 		}
 		return best;
 	}
 
-	function totalVolume(entry: ExerciseHistoryEntry): number {
-		return entry.sets.reduce((sum, s) => sum + (s.weight ?? 0) * (s.reps ?? 1), 0);
+	function totalVolume(entry: ExerciseHistoryEntry, category = 'strength'): number {
+		return entry.sets.reduce((sum, s) => sum + effectiveWeight(s, category) * (s.reps ?? 1), 0);
 	}
 
-	function formatSet(s: WorkoutSet | null): string {
+	function formatSet(s: WorkoutSet | null, category = 'strength'): string {
 		if (!s) return '—';
-		if (s.weight !== undefined && s.reps !== undefined) return `${s.weight}lb × ${s.reps}`;
+		if (s.weight !== undefined && s.reps !== undefined) {
+			if (category === 'bodyweight' && userBodyweight) {
+				const eff = userBodyweight + (s.weight ?? 0);
+				const extra = s.weight ? ` (+${s.weight})` : '';
+				return `${eff}lb${extra} × ${s.reps}`;
+			}
+			return `${s.weight}lb × ${s.reps}`;
+		}
+		if (category === 'bodyweight' && s.reps !== undefined) {
+			if (userBodyweight) {
+				const w = s.weight ?? 0;
+				const eff = userBodyweight + w;
+				const extra = w > 0 ? ` (+${w})` : '';
+				return `${eff}lb${extra} × ${s.reps}`;
+			}
+			return `${s.reps} reps`;
+		}
 		if (s.duration_seconds !== undefined) {
 			let txt = `${Math.round(s.duration_seconds / 60)}min`;
 			if (s.distance_miles !== undefined) txt += ` / ${s.distance_miles}mi`;
@@ -108,15 +152,14 @@
 		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 	}
 
-	function trend(current: ExerciseHistoryEntry, previous: ExerciseHistoryEntry | null): { icon: string; class: string } {
+	function trend(current: ExerciseHistoryEntry, previous: ExerciseHistoryEntry | null, category = 'strength'): { icon: string; class: string } {
 		if (!previous) return { icon: '', class: '' };
 		const curFinal = finalSet(current);
 		const prevFinal = finalSet(previous);
 		if (!curFinal || !prevFinal) return { icon: '', class: '' };
 
-		// Compare weight first, then reps
-		const cw = curFinal.weight ?? 0;
-		const pw = prevFinal.weight ?? 0;
+		const cw = effectiveWeight(curFinal, category);
+		const pw = effectiveWeight(prevFinal, category);
 		const cr = curFinal.reps ?? 0;
 		const pr = prevFinal.reps ?? 0;
 
@@ -127,22 +170,31 @@
 
 	function isPR(card: ExerciseProgressCard, sessionIdx: number): boolean {
 		const session = card.sessions[sessionIdx];
-		const best = bestSet(session);
-		if (!best || best.weight === undefined) return false;
+		const cat = card.exercise_category;
+		const best = bestSet(session, cat);
+		if (!best) return false;
+		const bestEff = effectiveWeight(best, cat);
+		if (bestEff === 0 && (best.reps ?? 0) === 0) return false;
 
-		// Check all sessions (including those after, since sessions are ordered DESC)
 		for (let i = 0; i < card.sessions.length; i++) {
 			if (i === sessionIdx) continue;
-			const otherBest = bestSet(card.sessions[i]);
+			const otherBest = bestSet(card.sessions[i], cat);
 			if (!otherBest) continue;
-			if ((otherBest.weight ?? 0) > (best.weight ?? 0)) return false;
-			if ((otherBest.weight ?? 0) === (best.weight ?? 0) && (otherBest.reps ?? 0) > (best.reps ?? 0)) return false;
+			const otherEff = effectiveWeight(otherBest, cat);
+			if (otherEff > bestEff) return false;
+			if (otherEff === bestEff && (otherBest.reps ?? 0) > (best.reps ?? 0)) return false;
 		}
 		return true;
 	}
 
-	function maxVolume(card: ExerciseProgressCard): number {
-		return Math.max(...card.sessions.map(totalVolume), 1);
+	function sessionMaxWeight(entry: ExerciseHistoryEntry, category = 'strength'): number {
+		const best = bestSet(entry, category);
+		if (!best) return 0;
+		return effectiveWeight(best, category);
+	}
+
+	function maxWeight(card: ExerciseProgressCard): number {
+		return Math.max(...card.sessions.map(s => sessionMaxWeight(s, card.exercise_category)), 1);
 	}
 </script>
 
@@ -202,7 +254,7 @@
 	<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 		{#each filteredCards as card}
 			{@const isCardio = card.exercise_category === 'cardio'}
-			{@const maxVol = maxVolume(card)}
+			{@const maxWt = maxWeight(card)}
 			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
 				<div class="card-body p-4 gap-2">
 					<!-- Card Header -->
@@ -222,19 +274,19 @@
 						<span class="text-xs opacity-40">{card.sessions.length} sessions</span>
 					</div>
 
-					<!-- Volume Sparkline -->
+					<!-- Max Weight Sparkline -->
 					{#if !isCardio && card.sessions.length > 1}
-						<div class="flex items-end gap-0.5 h-8 mt-1" title="Volume trend">
+						<div class="flex items-end gap-0.5 h-8 mt-1" title="Max weight trend">
 							{#each [...card.sessions].reverse() as session}
-								{@const vol = totalVolume(session)}
-								{@const pct = Math.max((vol / maxVol) * 100, 4)}
+								{@const wt = sessionMaxWeight(session, card.exercise_category)}
+								{@const pct = Math.max((wt / maxWt) * 100, 4)}
 								<div
 									class="flex-1 rounded-t transition-all"
 									class:bg-success={pct > 80}
 									class:bg-warning={pct > 50 && pct <= 80}
 									class:bg-info={pct <= 50}
 									style="height: {pct}%"
-									title="{formatDate(session.date)}: {vol.toLocaleString()} vol"
+									title="{formatDate(session.date)}: {wt}lb max"
 								></div>
 							{/each}
 						</div>
@@ -252,6 +304,7 @@
 									{:else}
 										<th class="text-right">Final Set</th>
 										<th class="text-right">Best Set</th>
+										<th class="text-right">Volume(lbs)</th>
 									{/if}
 									<th class="text-center">Diff</th>
 									<th class="text-center">RTP</th>
@@ -261,7 +314,7 @@
 							<tbody>
 								{#each card.sessions as session, i}
 									{@const prev = i < card.sessions.length - 1 ? card.sessions[i + 1] : null}
-									{@const t = trend(session, prev)}
+								{@const t = trend(session, prev, card.exercise_category)}
 									{@const pr = !isCardio && isPR(card, i)}
 									<tr class="hover">
 										<td class="font-semibold text-xs whitespace-nowrap">
@@ -277,8 +330,9 @@
 												{fs?.distance_miles ? `${fs.distance_miles}mi` : '—'}
 											</td>
 										{:else}
-											<td class="text-right text-xs font-mono">{formatSet(finalSet(session))}</td>
-											<td class="text-right text-xs font-mono opacity-60">{formatSet(bestSet(session))}</td>
+										<td class="text-right text-xs font-mono">{formatSet(finalSet(session), card.exercise_category)}</td>
+										<td class="text-right text-xs font-mono opacity-60">{formatSet(bestSet(session, card.exercise_category), card.exercise_category)}</td>
+										<td class="text-right text-xs font-mono opacity-70">{totalVolume(session, card.exercise_category).toLocaleString()}</td>
 										{/if}
 										<td class="text-center">
 											{#if session.difficulty}

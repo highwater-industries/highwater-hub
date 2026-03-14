@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"net/http"
+	"strconv"
 
 	"myproject/internal/httputil"
 )
@@ -108,7 +109,7 @@ func HandleGetJobStatus(client *Client) http.HandlerFunc {
 
 // HandleListJobs returns historical import runs from the database.
 //
-//	GET /api/jobs
+//	GET /api/jobs?collector_type=nflreadpy&status=completed&season=2024
 func HandleListJobs(store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p := httputil.ParsePagination(
@@ -116,7 +117,16 @@ func HandleListJobs(store Store) http.HandlerFunc {
 			r.URL.Query().Get("limit"),
 		)
 
-		records, total, err := store.List(r.Context(), p.Offset, p.Limit)
+		var filter JobFilter
+		filter.CollectorType = r.URL.Query().Get("collector_type")
+		filter.Status = r.URL.Query().Get("status")
+		if v := r.URL.Query().Get("season"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				filter.Season = n
+			}
+		}
+
+		records, total, err := store.List(r.Context(), p.Offset, p.Limit, filter)
 		if err != nil {
 			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
 				Error: "failed to list jobs",
@@ -166,5 +176,128 @@ func HandleGetJobSummary(store Store) http.HandlerFunc {
 		}
 
 		httputil.Encode(w, http.StatusOK, summary)
+	}
+}
+
+// HandleGetInventory returns an overview of all data in the database.
+//
+//	GET /api/data/inventory?source=nflreadpy&season=2024&stat_type=actual&season_type=REG&rank_type=draft
+func HandleGetInventory(store InventoryStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var filter InventoryFilter
+		filter.Source = r.URL.Query().Get("source")
+		filter.StatType = r.URL.Query().Get("stat_type")
+		filter.SeasonType = r.URL.Query().Get("season_type")
+		filter.RankType = r.URL.Query().Get("rank_type")
+		if v := r.URL.Query().Get("season"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				filter.Season = n
+			}
+		}
+
+		inv, err := store.GetInventory(r.Context(), filter)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to get inventory: " + err.Error(),
+			})
+			return
+		}
+
+		httputil.Encode(w, http.StatusOK, inv)
+	}
+}
+
+// HandleAbortJob marks a single job as failed and revokes its Celery task.
+//
+//	POST /api/jobs/{id}/abort
+func HandleAbortJob(store Store, client *Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "invalid job id",
+			})
+			return
+		}
+
+		celeryID, err := store.AbortJob(r.Context(), id)
+		if err != nil {
+			httputil.Encode(w, http.StatusNotFound, httputil.ErrorResponse{
+				Error: err.Error(),
+			})
+			return
+		}
+
+		// Best-effort revoke of the Celery task
+		revokeErr := ""
+		if celeryID != "" {
+			if err := client.RevokeTask(r.Context(), celeryID); err != nil {
+				revokeErr = err.Error()
+			}
+		}
+
+		httputil.Encode(w, http.StatusOK, map[string]any{
+			"aborted":      id,
+			"celery_task":  celeryID,
+			"revoke_error": revokeErr,
+		})
+	}
+}
+
+// HandleAbortAll marks all active jobs as failed and revokes Celery tasks.
+//
+//	POST /api/jobs/abort-all
+func HandleAbortAll(store Store, client *Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		count, celeryIDs, err := store.AbortAllActive(r.Context())
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to abort jobs: " + err.Error(),
+			})
+			return
+		}
+
+		// Best-effort revoke each Celery task
+		revoked := 0
+		for _, cid := range celeryIDs {
+			if err := client.RevokeTask(r.Context(), cid); err == nil {
+				revoked++
+			}
+		}
+
+		httputil.Encode(w, http.StatusOK, map[string]any{
+			"aborted":        count,
+			"celery_revoked": revoked,
+		})
+	}
+}
+
+// HandleRunAudit runs data quality checks on the specified table/season.
+//
+//	GET /api/data/audit?table=player_stats&season=2024
+func HandleRunAudit(store InventoryStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		table := r.URL.Query().Get("table")
+		if table == "" {
+			table = "player_stats"
+		}
+
+		season := 0
+		if v := r.URL.Query().Get("season"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				season = n
+			}
+		}
+
+		result, err := store.RunAudit(r.Context(), table, season)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to run audit: " + err.Error(),
+			})
+			return
+		}
+
+		httputil.Encode(w, http.StatusOK, result)
 	}
 }

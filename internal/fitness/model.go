@@ -92,6 +92,16 @@ type ExerciseHistoryEntry struct {
 	Sets            []WorkoutSet `json:"sets"`
 }
 
+// BodyweightEntry represents a single bodyweight log for a user.
+type BodyweightEntry struct {
+	ID        int       `json:"id"`
+	UserID    int       `json:"user_id"`
+	WeightLbs float64   `json:"weight_lbs"`
+	LoggedAt  time.Time `json:"logged_at"`
+	Notes     *string   `json:"notes,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ExerciseProgressCard holds an exercise and its recent session history,
 // used to render progress tracking cards.
 type ExerciseProgressCard struct {

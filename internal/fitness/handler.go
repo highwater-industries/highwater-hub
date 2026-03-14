@@ -9,6 +9,129 @@ import (
 	"myproject/internal/httputil"
 )
 
+// ── Bodyweight ──
+
+// HandleLogBodyweight records a new bodyweight entry.
+//
+//	POST /api/fitness/bodyweight  {"user_id": 1, "weight_lbs": 185.5, "logged_at": "2026-03-14T08:00:00Z", "notes": "morning, fasted"}
+func HandleLogBodyweight(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			UserID    int     `json:"user_id"`
+			WeightLbs float64 `json:"weight_lbs"`
+			LoggedAt  *string `json:"logged_at"`
+			Notes     *string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == 0 || body.WeightLbs <= 0 {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "user_id and weight_lbs (> 0) are required",
+			})
+			return
+		}
+
+		var loggedAt *time.Time
+		if body.LoggedAt != nil && *body.LoggedAt != "" {
+			t, err := time.Parse(time.RFC3339, *body.LoggedAt)
+			if err != nil {
+				httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+					Error: "invalid logged_at format, use RFC3339",
+				})
+				return
+			}
+			loggedAt = &t
+		}
+
+		entry, err := store.LogBodyweight(r.Context(), body.UserID, body.WeightLbs, loggedAt, body.Notes)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to log bodyweight",
+			})
+			return
+		}
+		httputil.Encode(w, http.StatusCreated, entry)
+	}
+}
+
+// HandleGetLatestBodyweight returns the most recent bodyweight for a user.
+//
+//	GET /api/fitness/bodyweight/latest?user_id=1
+func HandleGetLatestBodyweight(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "user_id is required",
+			})
+			return
+		}
+
+		entry, err := store.GetLatestBodyweight(r.Context(), userID)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to get latest bodyweight",
+			})
+			return
+		}
+		if entry == nil {
+			httputil.Encode(w, http.StatusOK, map[string]interface{}{"entry": nil})
+			return
+		}
+		httputil.Encode(w, http.StatusOK, entry)
+	}
+}
+
+// HandleListBodyweightHistory returns bodyweight history for a user.
+//
+//	GET /api/fitness/bodyweight?user_id=1&limit=30
+func HandleListBodyweightHistory(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "user_id is required",
+			})
+			return
+		}
+
+		limit := 30
+		if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 365 {
+			limit = v
+		}
+
+		entries, err := store.ListBodyweightHistory(r.Context(), userID, limit)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to list bodyweight history",
+			})
+			return
+		}
+		httputil.Encode(w, http.StatusOK, entries)
+	}
+}
+
+// HandleDeleteBodyweight removes a bodyweight entry.
+//
+//	DELETE /api/fitness/bodyweight/{id}
+func HandleDeleteBodyweight(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "invalid bodyweight entry id",
+			})
+			return
+		}
+
+		if err := store.DeleteBodyweight(r.Context(), id); err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to delete bodyweight entry",
+			})
+			return
+		}
+		httputil.Encode(w, http.StatusOK, map[string]string{"status": "deleted"})
+	}
+}
+
 // ── Users ──
 
 // HandleListUsers returns all fitness users.

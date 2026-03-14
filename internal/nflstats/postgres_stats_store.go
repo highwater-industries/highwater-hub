@@ -80,6 +80,184 @@ func (s *PostgresStatStore) ListStats(ctx context.Context, f StatFilter, offset,
 }
 
 // --------------------------------------------------------------------------
+// ListSeasonStats — aggregated stats grouped by player + season + season_type
+// --------------------------------------------------------------------------
+
+func (s *PostgresStatStore) ListSeasonStats(ctx context.Context, f StatFilter, offset, limit int) ([]PlayerStat, int, error) {
+	where, args := buildStatWhere(f)
+
+	// Build the aggregation query — dedup first, then group
+	baseSQL := `
+		WITH deduped AS (
+			SELECT DISTINCT ON (player_id, season, week, stat_type, source) *
+			FROM player_stats ps
+			` + where + `
+			ORDER BY player_id, season, week, stat_type, source, id DESC
+		)
+		SELECT
+			p.id                        AS player_db_id,
+			d.player_id,
+			d.player_name,
+			MAX(d.player_display_name)  AS player_display_name,
+			MAX(d.position)             AS position,
+			MAX(d.position_group)       AS position_group,
+			MAX(d.team)                 AS team,
+			d.season,
+			d.season_type,
+			COUNT(DISTINCT d.week)      AS games_played,
+			SUM(d.completions)          AS completions,
+			SUM(d.attempts)             AS attempts,
+			SUM(d.passing_yards)        AS passing_yards,
+			SUM(d.passing_tds)          AS passing_tds,
+			SUM(d.interceptions)        AS interceptions,
+			SUM(d.carries)              AS carries,
+			SUM(d.rushing_yards)        AS rushing_yards,
+			SUM(d.rushing_tds)          AS rushing_tds,
+			SUM(d.receptions)           AS receptions,
+			SUM(d.targets)              AS targets,
+			SUM(d.receiving_yards)      AS receiving_yards,
+			SUM(d.receiving_tds)        AS receiving_tds,
+			SUM(d.fantasy_points)       AS fantasy_points,
+			SUM(d.fantasy_points_ppr)   AS fantasy_points_ppr
+		FROM deduped d
+		LEFT JOIN players p ON d.player_id = p.player_id
+		GROUP BY p.id, d.player_id, d.player_name, d.season, d.season_type
+	`
+
+	// Count total rows (each group = one row)
+	countSQL := `SELECT COUNT(*) FROM (` + baseSQL + `) sub`
+	var total int
+	if err := s.db.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count season stats: %w", err)
+	}
+
+	// Add ordering
+	orderBy := buildSeasonStatOrderBy(f.Sort, f.Order)
+	querySQL := baseSQL + " " + orderBy + fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, querySQL, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query season stats: %w", err)
+	}
+	defer rows.Close()
+
+	stats := make([]PlayerStat, 0)
+	for rows.Next() {
+		st, err := scanSeasonStatRow(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan season stat: %w", err)
+		}
+		stats = append(stats, st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate season stats: %w", err)
+	}
+
+	return stats, total, nil
+}
+
+// scanSeasonStatRow scans the aggregated season stat row.
+func scanSeasonStatRow(rows *sql.Rows) (PlayerStat, error) {
+	var st PlayerStat
+	var playerDbID sql.NullInt64
+	var playerID, displayName, pos, posGroup, team, seasonType sql.NullString
+	var gamesPlayed sql.NullInt64
+	var completions, attempts, passingTds, interceptions sql.NullInt64
+	var carries, rushingTds, receptions, targets, receivingTds sql.NullInt64
+	var passingYards, rushingYards, receivingYards sql.NullFloat64
+	var fantasyPts, fantasyPtsPPR sql.NullFloat64
+
+	err := rows.Scan(
+		&playerDbID, &playerID, &st.PlayerName, &displayName, &pos,
+		&posGroup, &team, &st.Season, &seasonType,
+		&gamesPlayed,
+		&completions, &attempts, &passingYards, &passingTds, &interceptions,
+		&carries, &rushingYards, &rushingTds,
+		&receptions, &targets, &receivingYards, &receivingTds,
+		&fantasyPts, &fantasyPtsPPR,
+	)
+	if err != nil {
+		return PlayerStat{}, err
+	}
+
+	if playerDbID.Valid {
+		v := int(playerDbID.Int64)
+		st.PlayerDbID = &v
+	}
+	if playerID.Valid {
+		st.PlayerID = &playerID.String
+	}
+	if displayName.Valid {
+		st.PlayerDisplayName = &displayName.String
+	}
+	if pos.Valid {
+		st.Position = &pos.String
+	}
+	if posGroup.Valid {
+		st.PositionGroup = &posGroup.String
+	}
+	if team.Valid {
+		st.Team = &team.String
+	}
+	if seasonType.Valid {
+		st.SeasonType = &seasonType.String
+	}
+	// Use Week to hold games_played for the UI
+	if gamesPlayed.Valid {
+		st.Week = int(gamesPlayed.Int64)
+	}
+
+	setIntPtr(&st.Completions, completions)
+	setIntPtr(&st.Attempts, attempts)
+	setIntPtr(&st.PassingTds, passingTds)
+	setIntPtr(&st.Interceptions, interceptions)
+	setIntPtr(&st.Carries, carries)
+	setIntPtr(&st.RushingTds, rushingTds)
+	setIntPtr(&st.Receptions, receptions)
+	setIntPtr(&st.Targets, targets)
+	setIntPtr(&st.ReceivingTds, receivingTds)
+	setFloat64Ptr(&st.PassingYards, passingYards)
+	setFloat64Ptr(&st.RushingYards, rushingYards)
+	setFloat64Ptr(&st.ReceivingYards, receivingYards)
+	setFloat64Ptr(&st.FantasyPoints, fantasyPts)
+	setFloat64Ptr(&st.FantasyPointsPPR, fantasyPtsPPR)
+
+	return st, nil
+}
+
+func buildSeasonStatOrderBy(sort, order string) string {
+	dir := "DESC"
+	if order == "asc" || order == "ASC" {
+		dir = "ASC"
+	}
+	// Map frontend column names to aggregated aliases
+	validCols := map[string]string{
+		"player_name":        "d.player_name",
+		"team":               "team",
+		"position":           "position",
+		"season":             "d.season",
+		"season_type":        "d.season_type",
+		"week":               "games_played",
+		"passing_yards":      "passing_yards",
+		"passing_tds":        "passing_tds",
+		"rushing_yards":      "rushing_yards",
+		"rushing_tds":        "rushing_tds",
+		"receiving_yards":    "receiving_yards",
+		"receiving_tds":      "receiving_tds",
+		"receptions":         "receptions",
+		"targets":            "targets",
+		"carries":            "carries",
+		"fantasy_points":     "fantasy_points",
+		"fantasy_points_ppr": "fantasy_points_ppr",
+	}
+	if col, ok := validCols[sort]; ok {
+		return fmt.Sprintf("ORDER BY %s %s NULLS LAST", col, dir)
+	}
+	return "ORDER BY d.season DESC, d.season_type, fantasy_points_ppr DESC NULLS LAST"
+}
+
+// --------------------------------------------------------------------------
 // GetLeaders — top N by a stat column
 // --------------------------------------------------------------------------
 
@@ -189,6 +367,10 @@ func buildStatWhere(f StatFilter) (string, []any) {
 	if f.StatType != nil {
 		args = append(args, *f.StatType)
 		conditions = append(conditions, fmt.Sprintf("ps.stat_type = $%d", len(args)))
+	}
+	if f.SeasonType != nil {
+		args = append(args, *f.SeasonType)
+		conditions = append(conditions, fmt.Sprintf("ps.season_type = $%d", len(args)))
 	}
 	if f.Source != nil {
 		args = append(args, *f.Source)
@@ -443,8 +625,14 @@ func scanPlayerFromRow(row *sql.Row) (Player, error) {
 
 func (s *PostgresStatStore) querySeasonTotals(ctx context.Context, nflID string) ([]SeasonTotals, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT season,
-		       COUNT(*)                     AS games_played,
+		WITH deduped AS (
+			SELECT DISTINCT ON (player_id, season, week, stat_type, source) *
+			FROM player_stats
+			WHERE player_id = $1 AND stat_type = 'actual' AND week > 0
+			ORDER BY player_id, season, week, stat_type, source, id DESC
+		)
+		SELECT season, season_type,
+		       COUNT(DISTINCT week)            AS games_played,
 		       SUM(completions)             AS completions,
 		       SUM(attempts)                AS attempts,
 		       SUM(passing_yards)           AS passing_yards,
@@ -459,31 +647,106 @@ func (s *PostgresStatStore) querySeasonTotals(ctx context.Context, nflID string)
 		       SUM(receiving_tds)           AS receiving_tds,
 		       SUM(fantasy_points)          AS fantasy_points,
 		       SUM(fantasy_points_ppr)      AS fantasy_points_ppr
-		FROM player_stats
-		WHERE player_id = $1 AND stat_type = 'actual'
-		GROUP BY season
-		ORDER BY season DESC
+		FROM deduped
+		GROUP BY season, season_type
+		ORDER BY season DESC, season_type
 	`, nflID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	result := make([]SeasonTotals, 0)
+	// Collect per-season_type rows
+	perSeason := make(map[int][]SeasonTotals)
+	var seasonOrder []int
 	for rows.Next() {
 		st, err := scanSeasonTotals(rows)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, st)
+		if _, exists := perSeason[st.Season]; !exists {
+			seasonOrder = append(seasonOrder, st.Season)
+		}
+		perSeason[st.Season] = append(perSeason[st.Season], st)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Build result: for each season emit the type-specific rows plus a "total" row
+	result := make([]SeasonTotals, 0)
+	for _, season := range seasonOrder {
+		parts := perSeason[season]
+		for _, p := range parts {
+			result = append(result, p)
+		}
+		// Only add a total row if there are multiple season_types (REG + POST)
+		if len(parts) > 1 {
+			result = append(result, sumSeasonTotals(season, parts))
+		}
+	}
+	return result, nil
+}
+
+// sumSeasonTotals produces a "total" row by summing the per-season_type rows.
+func sumSeasonTotals(season int, parts []SeasonTotals) SeasonTotals {
+	total := SeasonTotals{Season: season, SeasonType: "total"}
+	for _, p := range parts {
+		total.GamesPlayed += p.GamesPlayed
+		addIntPtr(&total.Completions, p.Completions)
+		addIntPtr(&total.Attempts, p.Attempts)
+		addIntPtr(&total.PassingTds, p.PassingTds)
+		addIntPtr(&total.Interceptions, p.Interceptions)
+		addIntPtr(&total.Carries, p.Carries)
+		addIntPtr(&total.RushingTds, p.RushingTds)
+		addIntPtr(&total.Receptions, p.Receptions)
+		addIntPtr(&total.Targets, p.Targets)
+		addIntPtr(&total.ReceivingTds, p.ReceivingTds)
+		addFloat64Ptr(&total.PassingYards, p.PassingYards)
+		addFloat64Ptr(&total.RushingYards, p.RushingYards)
+		addFloat64Ptr(&total.ReceivingYards, p.ReceivingYards)
+		addFloat64Ptr(&total.FantasyPoints, p.FantasyPoints)
+		addFloat64Ptr(&total.FantasyPointsPPR, p.FantasyPointsPPR)
+	}
+	return total
+}
+
+// addIntPtr adds a nullable int to an accumulator pointer.
+func addIntPtr(dst **int, src *int) {
+	if src == nil {
+		return
+	}
+	if *dst == nil {
+		v := *src
+		*dst = &v
+	} else {
+		**dst += *src
+	}
+}
+
+// addFloat64Ptr adds a nullable float64 to an accumulator pointer.
+func addFloat64Ptr(dst **float64, src *float64) {
+	if src == nil {
+		return
+	}
+	if *dst == nil {
+		v := *src
+		*dst = &v
+	} else {
+		**dst += *src
+	}
 }
 
 func (s *PostgresStatStore) queryCareerTotals(ctx context.Context, nflID string) (SeasonTotals, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT 0 AS season,
-		       COUNT(*)                     AS games_played,
+		WITH deduped AS (
+			SELECT DISTINCT ON (player_id, season, week, stat_type, source) *
+			FROM player_stats
+			WHERE player_id = $1 AND stat_type = 'actual' AND week > 0
+			ORDER BY player_id, season, week, stat_type, source, id DESC
+		)
+		SELECT 0 AS season, 'career' AS season_type,
+		       COUNT(DISTINCT (season, week))  AS games_played,
 		       SUM(completions)             AS completions,
 		       SUM(attempts)                AS attempts,
 		       SUM(passing_yards)           AS passing_yards,
@@ -498,8 +761,7 @@ func (s *PostgresStatStore) queryCareerTotals(ctx context.Context, nflID string)
 		       SUM(receiving_tds)           AS receiving_tds,
 		       SUM(fantasy_points)          AS fantasy_points,
 		       SUM(fantasy_points_ppr)      AS fantasy_points_ppr
-		FROM player_stats
-		WHERE player_id = $1 AND stat_type = 'actual'
+		FROM deduped
 	`, nflID)
 
 	return scanSeasonTotalsSingle(row)
@@ -520,8 +782,12 @@ func (s *PostgresStatStore) queryRecentGames(ctx context.Context, nflID string, 
 		       receiving_2pt_conversions,
 		       fantasy_points, fantasy_points_ppr, special_teams_tds,
 		       source, created_at
-		FROM player_stats
-		WHERE player_id = $1 AND stat_type = 'actual'
+		FROM (
+			SELECT DISTINCT ON (player_id, season, week, stat_type, source) *
+			FROM player_stats
+			WHERE player_id = $1 AND stat_type = 'actual' AND week > 0
+			ORDER BY player_id, season, week, stat_type, source, id DESC
+		) deduped
 		ORDER BY season DESC, week DESC
 		LIMIT %d
 	`, limit), nflID)
@@ -670,7 +936,7 @@ func scanSeasonTotals(rows *sql.Rows) (SeasonTotals, error) {
 	var fantasyPts, fantasyPtsPPR sql.NullFloat64
 
 	err := rows.Scan(
-		&st.Season, &st.GamesPlayed,
+		&st.Season, &st.SeasonType, &st.GamesPlayed,
 		&completions, &attempts, &passingYards, &passingTds, &interceptions,
 		&carries, &rushingYards, &rushingTds,
 		&receptions, &targets, &receivingYards, &receivingTds,
@@ -707,7 +973,7 @@ func scanSeasonTotalsSingle(row *sql.Row) (SeasonTotals, error) {
 	var fantasyPts, fantasyPtsPPR sql.NullFloat64
 
 	err := row.Scan(
-		&st.Season, &st.GamesPlayed,
+		&st.Season, &st.SeasonType, &st.GamesPlayed,
 		&completions, &attempts, &passingYards, &passingTds, &interceptions,
 		&carries, &rushingYards, &rushingTds,
 		&receptions, &targets, &receivingYards, &receivingTds,

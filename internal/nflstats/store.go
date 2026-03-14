@@ -32,21 +32,24 @@ type Store interface {
 
 // StatFilter holds optional query parameters for filtering player stats.
 type StatFilter struct {
-	PlayerID *string
-	Team     *string
-	Position *string
-	Season   *int
-	Week     *int
-	StatType *string // actual, projected, fantasy
-	Source   *string // data source filter
-	Search   *string // case-insensitive substring on player_name
-	Sort     string
-	Order    string
+	PlayerID   *string
+	Team       *string
+	Position   *string
+	Season     *int
+	Week       *int
+	StatType   *string // actual, projected, fantasy
+	SeasonType *string // REG, POST
+	Source     *string // data source filter
+	Search     *string // case-insensitive substring on player_name
+	GroupBy    string  // "season" for aggregated season totals
+	Sort       string
+	Order      string
 }
 
 // StatStore reads player stat data.
 type StatStore interface {
 	ListStats(ctx context.Context, filter StatFilter, offset, limit int) ([]PlayerStat, int, error)
+	ListSeasonStats(ctx context.Context, filter StatFilter, offset, limit int) ([]PlayerStat, int, error)
 	GetLeaders(ctx context.Context, stat string, season, week int, position string, limit int) ([]PlayerStat, error)
 	GetPlayerSummary(ctx context.Context, playerID int) (*PlayerSummary, error)
 }

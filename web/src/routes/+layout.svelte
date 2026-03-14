@@ -16,7 +16,7 @@
 		stats: 'NFL Stats',
 		games: 'NFL Games',
 		rankings: 'NFL Rankings',
-		jobs: 'Jobs',
+		data: 'Data Management',
 		media: 'Media'
 	};
 
@@ -75,8 +75,8 @@
 			</li>
 			<li class="menu-title text-xs opacity-40 tracking-widest mt-2">SYSTEM</li>
 			<li>
-				<a href="/jobs" class="rounded-sm font-semibold tracking-wide" class:active={$page.url.pathname.startsWith('/jobs')}>
-					<span class="text-lg">⚙</span> Jobs
+				<a href="/data" class="rounded-sm font-semibold tracking-wide" class:active={$page.url.pathname.startsWith('/data')}>
+					<span class="text-lg">⚙</span> Data Management
 				</a>
 			</li>
 			<li>

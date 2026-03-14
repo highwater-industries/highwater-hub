@@ -21,6 +21,12 @@ type Store interface {
 	ListUsers(ctx context.Context) ([]FitnessUser, error)
 	CreateUser(ctx context.Context, name string) (FitnessUser, error)
 
+	// Bodyweight
+	LogBodyweight(ctx context.Context, userID int, weightLbs float64, loggedAt *time.Time, notes *string) (BodyweightEntry, error)
+	GetLatestBodyweight(ctx context.Context, userID int) (*BodyweightEntry, error)
+	ListBodyweightHistory(ctx context.Context, userID int, limit int) ([]BodyweightEntry, error)
+	DeleteBodyweight(ctx context.Context, id int) error
+
 	// Exercises
 	ListExercises(ctx context.Context, filter ExerciseFilter, offset, limit int) ([]Exercise, int, error)
 	CreateExercise(ctx context.Context, name, category string, muscleGroup, equipment *string, userID *int) (Exercise, error)

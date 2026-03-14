@@ -97,20 +97,21 @@ class PlayerResolver:
 
         # --- Phase 2: DB lookup on players table ---
         # 2a. Case-insensitive exact match on player_name
-        player = self._session.execute(
+        #     Use scalars().all() to handle duplicate names (e.g. "Josh Allen" QB & DE)
+        candidates = self._session.execute(
             select(PlayerDB).where(
                 func.lower(PlayerDB.player_name) == name.lower().strip()
             )
-        ).scalar_one_or_none()
+        ).scalars().all()
 
-        # 2b. If no exact match and team is known, try with team filter
-        if player is None and team:
-            player = self._session.execute(
-                select(PlayerDB).where(
-                    func.lower(PlayerDB.player_name) == name.lower().strip(),
-                    PlayerDB.team == team,
-                )
-            ).scalar_one_or_none()
+        player = None
+        if len(candidates) == 1:
+            player = candidates[0]
+        elif len(candidates) > 1 and team:
+            # Narrow by team when multiple players share the same name
+            team_matches = [p for p in candidates if p.team == team]
+            if len(team_matches) == 1:
+                player = team_matches[0]
 
         # 2c. Try normalised match (strips Jr/II/III and periods)
         if player is None:

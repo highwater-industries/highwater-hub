@@ -84,8 +84,8 @@ export const RANK_TYPES = [
 	{ value: 'all', label: 'All' },
 ];
 
-// NFL weeks (1–18 regular season + postseason)
-export const NFL_WEEKS: number[] = Array.from({ length: 18 }, (_, i) => i + 1);
+// NFL weeks (1–18 regular season, 19–22 postseason)
+export const NFL_WEEKS: number[] = Array.from({ length: 22 }, (_, i) => i + 1);
 
 // Stat columns available for the leaders query
 export const LEADER_STATS = [

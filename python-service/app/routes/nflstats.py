@@ -20,6 +20,7 @@ from app.schemas.nflstats import (
     JobStatus,
 )
 from app.tasks.import_task import _record_history, run_import
+from app.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -142,3 +143,18 @@ async def get_job_status(job_id: str):
         status=result.state.lower(),
         meta=result.info if isinstance(result.info, dict) else None,
     )
+
+
+@router.post(
+    "/jobs/{job_id}/revoke",
+    responses={200: {"description": "Task revoked"}, 404: {"model": ErrorOut}},
+)
+async def revoke_job(job_id: str):
+    """Revoke (cancel/terminate) a Celery task by its ID."""
+    logger.info("Revoking Celery task %s", job_id)
+    try:
+        celery_app.control.revoke(job_id, terminate=True, signal="SIGTERM")
+        return {"status": "revoked", "job_id": job_id}
+    except Exception as exc:
+        logger.error("Failed to revoke task %s: %s", job_id, exc)
+        raise HTTPException(status_code=500, detail=str(exc))

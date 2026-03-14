@@ -22,10 +22,16 @@ func addRoutes(mux *http.ServeMux, cfg Config) {
 	// Jobs
 	mux.HandleFunc("POST /api/jobs/import/batch", jobs.HandleBatchImport(cfg.JobsClient))
 	mux.HandleFunc("POST /api/jobs/import", jobs.HandleStartImport(cfg.JobsClient))
+	mux.HandleFunc("POST /api/jobs/abort-all", jobs.HandleAbortAll(cfg.JobsStore, cfg.JobsClient))
+	mux.HandleFunc("POST /api/jobs/{id}/abort", jobs.HandleAbortJob(cfg.JobsStore, cfg.JobsClient))
 	mux.HandleFunc("POST /api/jobs/cleanup", jobs.HandleCleanupStuck(cfg.JobsStore))
 	mux.HandleFunc("GET /api/jobs/summary", jobs.HandleGetJobSummary(cfg.JobsStore))
 	mux.HandleFunc("GET /api/jobs/{job_id}", jobs.HandleGetJobStatus(cfg.JobsClient))
 	mux.HandleFunc("GET /api/jobs", jobs.HandleListJobs(cfg.JobsStore))
+
+	// Data Management
+	mux.HandleFunc("GET /api/data/inventory", jobs.HandleGetInventory(cfg.InventoryStore))
+	mux.HandleFunc("GET /api/data/audit", jobs.HandleRunAudit(cfg.InventoryStore))
 
 	// NFL Stats
 	mux.HandleFunc("GET /api/nflstats/players/{id}/summary", nflstats.HandleGetPlayerSummary(cfg.PlayerStore, cfg.StatStore))
@@ -38,6 +44,10 @@ func addRoutes(mux *http.ServeMux, cfg Config) {
 	mux.HandleFunc("GET /api/nflstats/rankings", nflstats.HandleListRankings(cfg.RankingStore))
 
 	// Fitness
+	mux.HandleFunc("GET /api/fitness/bodyweight/latest", fitness.HandleGetLatestBodyweight(cfg.FitnessStore))
+	mux.HandleFunc("GET /api/fitness/bodyweight", fitness.HandleListBodyweightHistory(cfg.FitnessStore))
+	mux.HandleFunc("POST /api/fitness/bodyweight", fitness.HandleLogBodyweight(cfg.FitnessStore))
+	mux.HandleFunc("DELETE /api/fitness/bodyweight/{id}", fitness.HandleDeleteBodyweight(cfg.FitnessStore))
 	mux.HandleFunc("GET /api/fitness/progress", fitness.HandleGetUserProgress(cfg.FitnessStore))
 	mux.HandleFunc("GET /api/fitness/users", fitness.HandleListUsers(cfg.FitnessStore))
 	mux.HandleFunc("POST /api/fitness/users", fitness.HandleCreateUser(cfg.FitnessStore))

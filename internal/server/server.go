@@ -11,15 +11,16 @@ import (
 )
 
 type Config struct {
-	Logger       *slog.Logger
-	UserStore    user.Store
-	JobsClient   *jobs.Client
-	JobsStore    jobs.Store
-	PlayerStore  nflstats.Store
-	StatStore    nflstats.StatStore
-	GameStore    nflstats.GameStore
-	RankingStore nflstats.RankingStore
-	FitnessStore fitness.Store
+	Logger         *slog.Logger
+	UserStore      user.Store
+	JobsClient     *jobs.Client
+	JobsStore      jobs.Store
+	InventoryStore jobs.InventoryStore
+	PlayerStore    nflstats.Store
+	StatStore      nflstats.StatStore
+	GameStore      nflstats.GameStore
+	RankingStore   nflstats.RankingStore
+	FitnessStore   fitness.Store
 }
 
 func NewServer(cfg Config) http.Handler {

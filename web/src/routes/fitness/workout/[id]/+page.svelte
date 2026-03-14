@@ -14,6 +14,7 @@
 		updateSet,
 		deleteSet,
 		getExerciseHistory,
+		getLatestBodyweight,
 		type WorkoutDetail,
 		type WorkoutExerciseDetail,
 		type WorkoutSet,
@@ -41,6 +42,9 @@
 	let showComplete = $state(false);
 	let completionNotes = $state('');
 
+	// User bodyweight for effective weight calculations
+	let userBodyweight: number | null = $state(null);
+
 	$effect(() => {
 		const id = Number($page.params.id);
 		if (id) loadWorkout(id);
@@ -53,6 +57,13 @@
 		}
 		try {
 			workout = await getWorkout(id);
+			// Load bodyweight for effective weight display
+			if (workout?.user_id) {
+				try {
+					const bw = await getLatestBodyweight(workout.user_id);
+					userBodyweight = bw?.weight_lbs ?? null;
+				} catch { /* non-fatal */ }
+			}
 		} catch (e) {
 			error = 'Workout not found';
 		} finally {
@@ -487,6 +498,11 @@
 					{/if}
 				{:else}
 					<!-- Strength / Bodyweight: set table -->
+					{#if we.exercise_category === 'bodyweight' && userBodyweight}
+						<div class="text-xs opacity-60 mt-2 mb-1">
+							Bodyweight: {userBodyweight} lb — weight entered below is <em>added</em> weight
+						</div>
+					{/if}
 					{#if we.sets.length > 0}
 						<div class="overflow-x-auto mt-2">
 							<table class="table table-sm">
@@ -494,7 +510,8 @@
 									<tr>
 										<th class="w-12">#</th>
 										<th>Reps</th>
-										<th>Weight (lb)</th>
+										<th>{we.exercise_category === 'bodyweight' ? 'Added Wt (lb)' : 'Weight (lb)'}</th>
+										{#if we.exercise_category === 'bodyweight' && userBodyweight}<th>Effective</th>{/if}
 										{#if !workout.completed_at}<th class="w-12"></th>{/if}
 									</tr>
 								</thead>
@@ -522,6 +539,9 @@
 													disabled={!!workout.completed_at}
 												/>
 											</td>
+											{#if we.exercise_category === 'bodyweight' && userBodyweight}
+												<td class="text-xs opacity-70">{(userBodyweight + (s.weight ?? 0))} lb</td>
+											{/if}
 											{#if !workout.completed_at}
 												<td>
 													<button class="btn btn-ghost btn-xs text-error" onclick={() => handleDeleteSet(s.id)}>✕</button>

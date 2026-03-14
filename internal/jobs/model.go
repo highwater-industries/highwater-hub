@@ -64,6 +64,22 @@ type JobRecord struct {
 	Progress        *float64       `json:"progress"`
 }
 
+// JobFilter holds optional filter criteria for listing jobs.
+type JobFilter struct {
+	CollectorType string
+	Status        string
+	Season        int // 0 = all
+}
+
+// InventoryFilter holds optional filter criteria for the inventory endpoint.
+type InventoryFilter struct {
+	Source     string
+	Season     int // 0 = all
+	StatType   string
+	SeasonType string
+	RankType   string
+}
+
 // JobSummary holds aggregate status counts.
 type JobSummary struct {
 	Pending   int `json:"pending"`

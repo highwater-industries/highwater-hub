@@ -15,7 +15,9 @@
 	let season: number | undefined = $state(undefined);
 	let week: number | undefined = $state(undefined);
 	let statType = $state('');
+	let seasonType = $state('');
 	let source = $state('');
+	let groupBy = $state('');
 	let offset = $state(0);
 	const limit = 25;
 
@@ -59,7 +61,9 @@
 			if (season !== undefined) filter.season = season;
 			if (week !== undefined) filter.week = week;
 			if (statType) filter.stat_type = statType;
+			if (seasonType) filter.season_type = seasonType;
 			if (source) filter.source = source;
+			if (groupBy) filter.group_by = groupBy;
 			if (sortCol) filter.sort = sortCol;
 			if (sortOrder) filter.order = sortOrder;
 
@@ -104,7 +108,9 @@ leaderPosition || undefined,
 		season = undefined;
 		week = undefined;
 		statType = '';
+		seasonType = '';
 		source = '';
+		groupBy = '';
 		sortCol = '';
 		sortOrder = '';
 		offset = 0;
@@ -130,13 +136,36 @@ leaderPosition || undefined,
 		return n.toLocaleString();
 	}
 
+	// Page totals — sum the visible rows
+	let pageTotals = $derived.by(() => {
+		const sum = (fn: (s: PlayerStat) => number | undefined | null) =>
+			stats.reduce((acc, s) => acc + (fn(s) ?? 0), 0);
+		return {
+			passing_yards: sum(s => s.passing_yards),
+			passing_tds: sum(s => s.passing_tds),
+			rushing_yards: sum(s => s.rushing_yards),
+			rushing_tds: sum(s => s.rushing_tds),
+			receiving_yards: sum(s => s.receiving_yards),
+			receiving_tds: sum(s => s.receiving_tds),
+			receptions: sum(s => s.receptions),
+			fantasy_points_ppr: sum(s => s.fantasy_points_ppr),
+		};
+	});
+
 	onMount(loadStats);
 </script>
 
 <div class="flex justify-between items-center mb-4">
 	<h1 class="text-2xl font-bold text-primary tracking-wide">// PLAYER STATS</h1>
 	<div class="flex gap-2 items-center">
-		<span class="text-sm opacity-60">{total.toLocaleString()} stat lines</span>
+		<span class="text-sm opacity-60">{total.toLocaleString()} {groupBy === 'season' ? 'season totals' : 'stat lines'}</span>
+		<button
+			class="btn btn-sm"
+			class:btn-accent={groupBy === 'season'}
+			onclick={() => { groupBy = groupBy === 'season' ? '' : 'season'; offset = 0; loadStats(); }}
+		>
+			{groupBy === 'season' ? '← Weekly' : 'Σ Season Totals'}
+		</button>
 		<button
 			class="btn btn-sm"
 			class:btn-primary={showLeaders}
@@ -253,6 +282,11 @@ leaderPosition || undefined,
 				<option value={st.value}>{st.label}</option>
 			{/each}
 		</select>
+		<select class="select select-bordered select-sm" bind:value={seasonType} onchange={applyFilters}>
+			<option value="">All Szn Types</option>
+			<option value="REG">REG</option>
+			<option value="POST">POST</option>
+		</select>
 		<select class="select select-bordered select-sm" bind:value={source} onchange={applyFilters}>
 			<option value="">All Sources</option>
 			{#each SOURCES as src}
@@ -278,7 +312,8 @@ leaderPosition || undefined,
 							<th class="sortable" onclick={() => toggleSort('team')}>Team{sortIndicator('team')}</th>
 							<th class="sortable" onclick={() => toggleSort('position')}>Pos{sortIndicator('position')}</th>
 							<th class="sortable" onclick={() => toggleSort('season')}>Szn{sortIndicator('season')}</th>
-							<th class="sortable" onclick={() => toggleSort('week')}>Wk{sortIndicator('week')}</th>
+							<th class="sortable" onclick={() => toggleSort('week')}>{groupBy === 'season' ? 'GP' : 'Wk'}{sortIndicator('week')}</th>
+							<th class="sortable" onclick={() => toggleSort('season_type')}>Type{sortIndicator('season_type')}</th>
 							<th class="sortable text-right" onclick={() => toggleSort('passing_yards')}>Pass Yd{sortIndicator('passing_yards')}</th>
 							<th class="sortable text-right" onclick={() => toggleSort('passing_tds')}>Pass TD{sortIndicator('passing_tds')}</th>
 							<th class="sortable text-right" onclick={() => toggleSort('rushing_yards')}>Rush Yd{sortIndicator('rushing_yards')}</th>
@@ -297,6 +332,7 @@ leaderPosition || undefined,
 								<td>{s.position ?? '—'}</td>
 								<td>{s.season}</td>
 								<td>{s.week}</td>
+								<td>{s.season_type ?? '—'}</td>
 								<td class="text-right">{fmtNum(s.passing_yards)}</td>
 								<td class="text-right">{fmtNum(s.passing_tds)}</td>
 								<td class="text-right">{fmtNum(s.rushing_yards)}</td>
@@ -308,10 +344,30 @@ leaderPosition || undefined,
 							</tr>
 						{:else}
 							<tr>
-								<td colspan="13" class="text-center opacity-50 py-8">No stat records found</td>
+								<td colspan="14" class="text-center opacity-50 py-8">No stat records found</td>
 							</tr>
 						{/each}
 					</tbody>
+					{#if stats.length > 1}
+					<tfoot>
+						<tr class="font-semibold">
+							<td>Page Total</td>
+							<td></td>
+							<td></td>
+							<td></td>
+							<td></td>
+							<td></td>
+							<td class="text-right">{fmtNum(pageTotals.passing_yards)}</td>
+							<td class="text-right">{fmtNum(pageTotals.passing_tds)}</td>
+							<td class="text-right">{fmtNum(pageTotals.rushing_yards)}</td>
+							<td class="text-right">{fmtNum(pageTotals.rushing_tds)}</td>
+							<td class="text-right">{fmtNum(pageTotals.receiving_yards)}</td>
+							<td class="text-right">{fmtNum(pageTotals.receiving_tds)}</td>
+							<td class="text-right">{fmtNum(pageTotals.receptions)}</td>
+							<td class="text-right font-bold text-accent">{fmtNum(pageTotals.fantasy_points_ppr)}</td>
+						</tr>
+					</tfoot>
+					{/if}
 				</table>
 			</div>
 		</div>

@@ -105,6 +105,7 @@ export function getPlayer(id: number): Promise<{ data: Player }> {
 
 export interface SeasonTotals {
 	season: number;
+	season_type: string;
 	games_played: number;
 	completions?: number;
 	attempts?: number;
@@ -136,8 +137,18 @@ export function getPlayerSummary(id: number): Promise<PlayerSummary> {
 
 // ── Jobs ──
 
-export function listJobs(offset = 0, limit = 50): Promise<ListResponse<Job>> {
-	return get(`/jobs?offset=${offset}&limit=${limit}`);
+export interface JobFilter {
+	collector_type?: string;
+	status?: string;
+	season?: number;
+}
+
+export function listJobs(offset = 0, limit = 50, filter: JobFilter = {}): Promise<ListResponse<Job>> {
+	const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+	if (filter.collector_type) params.set('collector_type', filter.collector_type);
+	if (filter.status) params.set('status', filter.status);
+	if (filter.season) params.set('season', String(filter.season));
+	return get(`/jobs?${params}`);
 }
 
 export interface JobSummary {
@@ -154,6 +165,109 @@ export function getJobSummary(): Promise<JobSummary> {
 
 export function cleanupStuckJobs(): Promise<{ cleaned: number }> {
 	return post('/jobs/cleanup');
+}
+
+export function abortJob(id: number): Promise<{ aborted: number; celery_task: string; revoke_error: string }> {
+	return post(`/jobs/${id}/abort`);
+}
+
+export function abortAllJobs(): Promise<{ aborted: number; celery_revoked: number }> {
+	return post('/jobs/abort-all');
+}
+
+// ── Data Inventory & Audit ──
+
+export interface InventoryRow {
+	source: string;
+	table: string;
+	season?: number;
+	stat_type?: string;
+	season_type?: string;
+	rank_type?: string;
+	rows: number;
+	distinct_players: number;
+	min_week?: number;
+	max_week?: number;
+	week_count?: number;
+	last_updated: string;
+}
+
+export interface InventoryTotals {
+	players: number;
+	stats: number;
+	games: number;
+	rankings: number;
+}
+
+export interface InventoryResponse {
+	stats: InventoryRow[];
+	players: InventoryRow[];
+	games: InventoryRow[];
+	rankings: InventoryRow[];
+	totals: InventoryTotals;
+}
+
+export interface InventoryFilter {
+	source?: string;
+	season?: number;
+	stat_type?: string;
+	season_type?: string;
+	rank_type?: string;
+}
+
+export function getInventory(filter: InventoryFilter = {}): Promise<InventoryResponse> {
+	const params = new URLSearchParams();
+	if (filter.source) params.set('source', filter.source);
+	if (filter.season) params.set('season', String(filter.season));
+	if (filter.stat_type) params.set('stat_type', filter.stat_type);
+	if (filter.season_type) params.set('season_type', filter.season_type);
+	if (filter.rank_type) params.set('rank_type', filter.rank_type);
+	const qs = params.toString();
+	return get(`/data/inventory${qs ? '?' + qs : ''}`);
+}
+
+export interface AuditDuplicate {
+	season: number;
+	week: number;
+	stat_type: string;
+	source: string;
+	duplicates: number;
+}
+
+export interface AuditCompleteness {
+	season: number;
+	expected_weeks: number;
+	actual_weeks: number;
+	missing_weeks: number;
+}
+
+export interface AuditPlayerCoverage {
+	season: number;
+	rostered_players: number;
+	players_with_stats: number;
+	missing_stats: number;
+}
+
+export interface AuditRankingCoverage {
+	total_rankings: number;
+	resolved_players: number;
+	unresolved_players: number;
+	resolution_pct: number;
+}
+
+export interface AuditResult {
+	duplicates: AuditDuplicate[];
+	completeness: AuditCompleteness[];
+	player_coverage: AuditPlayerCoverage[];
+	ranking_coverage?: AuditRankingCoverage;
+}
+
+export function runAudit(table?: string, season?: number): Promise<AuditResult> {
+	const params = new URLSearchParams();
+	if (table) params.set('table', table);
+	if (season !== undefined) params.set('season', String(season));
+	const qs = params.toString();
+	return get(`/data/audit${qs ? '?' + qs : ''}`);
 }
 
 export interface ImportOptions {
@@ -236,6 +350,7 @@ export interface PlayerStat {
 	season: number;
 	week: number;
 	stat_type?: string;
+	season_type?: string;
 	opponent_team?: string;
 	completions?: number;
 	attempts?: number;
@@ -261,8 +376,10 @@ export interface StatFilter {
 	season?: number;
 	week?: number;
 	stat_type?: string;
+	season_type?: string;
 	source?: string;
 	search?: string;
+	group_by?: string;
 	sort?: string;
 	order?: string;
 	offset?: number;
@@ -277,8 +394,10 @@ export function listStats(filter: StatFilter = {}): Promise<ListResponse<PlayerS
 	if (filter.season !== undefined) params.set('season', String(filter.season));
 	if (filter.week !== undefined) params.set('week', String(filter.week));
 	if (filter.stat_type) params.set('stat_type', filter.stat_type);
+	if (filter.season_type) params.set('season_type', filter.season_type);
 	if (filter.source) params.set('source', filter.source);
 	if (filter.search) params.set('search', filter.search);
+	if (filter.group_by) params.set('group_by', filter.group_by);
 	if (filter.sort) params.set('sort', filter.sort);
 	if (filter.order) params.set('order', filter.order);
 	if (filter.offset !== undefined) params.set('offset', String(filter.offset));
@@ -477,6 +596,15 @@ export interface ExerciseProgressCard {
 	sessions: ExerciseHistoryEntry[];
 }
 
+export interface BodyweightEntry {
+	id: number;
+	user_id: number;
+	weight_lbs: number;
+	logged_at: string;
+	notes?: string;
+	created_at: string;
+}
+
 // ── Fitness: Users ──
 
 export function listFitnessUsers(): Promise<FitnessUser[]> {
@@ -485,6 +613,37 @@ export function listFitnessUsers(): Promise<FitnessUser[]> {
 
 export function createFitnessUser(name: string): Promise<FitnessUser> {
 	return post('/fitness/users', { name });
+}
+
+// ── Fitness: Bodyweight ──
+
+export function logBodyweight(
+	userId: number,
+	weightLbs: number,
+	loggedAt?: string,
+	notes?: string
+): Promise<BodyweightEntry> {
+	return post('/fitness/bodyweight', {
+		user_id: userId,
+		weight_lbs: weightLbs,
+		logged_at: loggedAt,
+		notes
+	});
+}
+
+export function getLatestBodyweight(userId: number): Promise<BodyweightEntry | null> {
+	return get(`/fitness/bodyweight/latest?user_id=${userId}`).then((r) => {
+		if (r && r.entry === null) return null;
+		return r as BodyweightEntry;
+	});
+}
+
+export function listBodyweightHistory(userId: number, limit = 30): Promise<BodyweightEntry[]> {
+	return get(`/fitness/bodyweight?user_id=${userId}&limit=${limit}`);
+}
+
+export function deleteBodyweight(id: number): Promise<{ status: string }> {
+	return del(`/fitness/bodyweight/${id}`);
 }
 
 // ── Fitness: Exercises ──

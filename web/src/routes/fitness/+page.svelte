@@ -7,8 +7,13 @@
 		listWorkouts,
 		createWorkout,
 		deleteWorkout,
+		logBodyweight,
+		getLatestBodyweight,
+		listBodyweightHistory,
+		deleteBodyweight,
 		type FitnessUser,
-		type WorkoutSummary
+		type WorkoutSummary,
+		type BodyweightEntry
 	} from '$lib/api';
 
 	let users: FitnessUser[] = $state([]);
@@ -30,6 +35,14 @@
 	let workoutIsDeload = $state(false);
 	let showNewWorkoutOptions = $state(false);
 
+	// Bodyweight state
+	let latestBodyweight: BodyweightEntry | null = $state(null);
+	let bodyweightHistory: BodyweightEntry[] = $state([]);
+	let showBodyweightHistory = $state(false);
+	let newWeight = $state('');
+	let newWeightNotes = $state('');
+	let loggingWeight = $state(false);
+
 	async function loadUsers() {
 		try {
 			users = await listFitnessUsers();
@@ -42,6 +55,7 @@
 				selectUser(users[0]);
 			}
 			if (activeUser) await loadWorkouts();
+			if (activeUser) await loadBodyweight();
 		} catch (e) {
 			console.error('Failed to load users', e);
 		} finally {
@@ -53,6 +67,51 @@
 		activeUser = user;
 		localStorage.setItem('fitness_user_id', String(user.id));
 		loadWorkouts();
+		loadBodyweight();
+	}
+
+	async function loadBodyweight() {
+		if (!activeUser) return;
+		try {
+			latestBodyweight = await getLatestBodyweight(activeUser.id);
+			if (showBodyweightHistory) {
+				bodyweightHistory = await listBodyweightHistory(activeUser.id, 30) ?? [];
+			}
+		} catch (e) {
+			console.error('Failed to load bodyweight', e);
+		}
+	}
+
+	async function handleLogWeight() {
+		const w = Number(newWeight);
+		if (!activeUser || !w || isNaN(w) || w <= 0) return;
+		loggingWeight = true;
+		try {
+			await logBodyweight(activeUser.id, w, undefined, newWeightNotes.trim() || undefined);
+			newWeight = '';
+			newWeightNotes = '';
+			await loadBodyweight();
+		} catch (e) {
+			console.error('Failed to log bodyweight', e);
+		} finally {
+			loggingWeight = false;
+		}
+	}
+
+	async function handleDeleteWeight(id: number) {
+		try {
+			await deleteBodyweight(id);
+			await loadBodyweight();
+		} catch (e) {
+			console.error('Failed to delete bodyweight entry', e);
+		}
+	}
+
+	async function toggleBodyweightHistory() {
+		showBodyweightHistory = !showBodyweightHistory;
+		if (showBodyweightHistory && activeUser) {
+			bodyweightHistory = await listBodyweightHistory(activeUser.id, 30) ?? [];
+		}
 	}
 
 	async function loadWorkouts() {
@@ -182,6 +241,79 @@
 	</div>
 
 	{#if activeUser}
+		<!-- Bodyweight Card -->
+		<div class="card bg-base-200 border border-base-300 shadow-sm mb-5">
+			<div class="card-body p-4 gap-2">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<span class="text-sm font-bold opacity-70">⚖️ Bodyweight</span>
+						{#if latestBodyweight}
+							<span class="text-xl font-bold text-primary">{latestBodyweight.weight_lbs} lbs</span>
+							<span class="text-xs opacity-40">
+								{new Date(latestBodyweight.logged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+							</span>
+						{:else}
+							<span class="text-sm opacity-40">Not logged yet</span>
+						{/if}
+					</div>
+					<button class="btn btn-ghost btn-xs" onclick={toggleBodyweightHistory}>
+						{showBodyweightHistory ? '▲' : '📋'}
+					</button>
+				</div>
+
+				<!-- Quick Log Form -->
+				<form class="flex items-center gap-2 mt-1" onsubmit={(e) => { e.preventDefault(); handleLogWeight(); }}>
+					<input
+						type="number"
+						inputmode="decimal"
+						step="0.1"
+						class="input input-bordered input-sm w-24"
+						placeholder="lbs"
+						bind:value={newWeight}
+					/>
+					<input
+						type="text"
+						class="input input-bordered input-sm flex-1 max-w-48"
+						placeholder="Notes (optional)"
+						bind:value={newWeightNotes}
+					/>
+					<button type="submit" class="btn btn-primary btn-sm" disabled={loggingWeight || !newWeight}>
+						{loggingWeight ? '...' : 'Log'}
+					</button>
+				</form>
+
+				<!-- History -->
+				{#if showBodyweightHistory && bodyweightHistory.length > 0}
+					<div class="overflow-x-auto mt-2">
+						<table class="table table-xs table-zebra">
+							<thead>
+								<tr class="text-xs opacity-60">
+									<th>Date</th>
+									<th>Weight</th>
+									<th>Notes</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each bodyweightHistory as entry}
+									<tr class="hover">
+										<td class="text-xs">
+											{new Date(entry.logged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+										</td>
+										<td class="font-mono font-bold text-sm">{entry.weight_lbs}</td>
+										<td class="text-xs opacity-50">{entry.notes ?? ''}</td>
+										<td>
+											<button class="btn btn-ghost btn-xs text-error" onclick={() => handleDeleteWeight(entry.id)}>✕</button>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</div>
+		</div>
+
 		<!-- Start Workout -->
 		<div class="mb-6">
 			<div class="flex flex-wrap items-center gap-2">

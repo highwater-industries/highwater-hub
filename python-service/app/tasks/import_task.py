@@ -138,12 +138,33 @@ def _persist_players(
     return {"inserted": inserted, "updated": updated, "skipped": skipped}
 
 
+# Columns updated on conflict (everything except the natural key + id + created_at)
+_STAT_UPDATE_COLS = (
+    "player_name", "player_display_name", "position",
+    "position_group", "team", "season_type", "opponent_team",
+    "completions", "attempts", "passing_yards", "passing_tds",
+    "interceptions", "sacks", "sack_yards", "passing_air_yards",
+    "passing_yards_after_catch", "passing_2pt_conversions",
+    "carries", "rushing_yards", "rushing_tds", "rushing_fumbles",
+    "rushing_fumbles_lost", "rushing_2pt_conversions",
+    "receptions", "targets", "receiving_yards", "receiving_tds",
+    "receiving_fumbles", "receiving_fumbles_lost",
+    "receiving_air_yards", "receiving_yards_after_catch",
+    "receiving_2pt_conversions",
+    "fantasy_points", "fantasy_points_ppr", "special_teams_tds",
+)
+
+
 def _persist_stats(
     stats: List[Dict[str, Any]],
     strategy: str,
     collector_type: str,
 ) -> Dict[str, int]:
-    """Write collected stat dicts to the ``player_stats`` table."""
+    """Write collected stat dicts to the ``player_stats`` table.
+
+    Uses INSERT ... ON CONFLICT DO UPDATE (true upsert) to prevent
+    duplicate rows when concurrent workers import the same season.
+    """
     inserted = updated = skipped = 0
 
     with SyncSession() as session:
@@ -169,79 +190,66 @@ def _persist_stats(
                 skipped += 1
                 continue
 
-            existing = None
-            if pid and season is not None and strategy == "merge":
-                existing = session.execute(
-                    select(PlayerStat).where(
-                        PlayerStat.player_id == pid,
-                        PlayerStat.season == season,
-                        PlayerStat.week == week,
-                        PlayerStat.stat_type == stat_type,
-                        PlayerStat.source == source,
-                    )
-                ).scalar_one_or_none()
+            # Build values dict for the row
+            values = {
+                "player_id": pid,
+                "player_name": s.get("player_name", ""),
+                "player_display_name": s.get("player_display_name"),
+                "position": s.get("position"),
+                "position_group": s.get("position_group"),
+                "team": s.get("team"),
+                "season": season,
+                "week": week,
+                "stat_type": stat_type,
+                "season_type": s.get("season_type"),
+                "opponent_team": s.get("opponent_team"),
+                "completions": s.get("completions"),
+                "attempts": s.get("attempts"),
+                "passing_yards": s.get("passing_yards"),
+                "passing_tds": s.get("passing_tds"),
+                "interceptions": s.get("interceptions"),
+                "sacks": s.get("sacks"),
+                "sack_yards": s.get("sack_yards"),
+                "passing_air_yards": s.get("passing_air_yards"),
+                "passing_yards_after_catch": s.get("passing_yards_after_catch"),
+                "passing_2pt_conversions": s.get("passing_2pt_conversions"),
+                "carries": s.get("carries"),
+                "rushing_yards": s.get("rushing_yards"),
+                "rushing_tds": s.get("rushing_tds"),
+                "rushing_fumbles": s.get("rushing_fumbles"),
+                "rushing_fumbles_lost": s.get("rushing_fumbles_lost"),
+                "rushing_2pt_conversions": s.get("rushing_2pt_conversions"),
+                "receptions": s.get("receptions"),
+                "targets": s.get("targets"),
+                "receiving_yards": s.get("receiving_yards"),
+                "receiving_tds": s.get("receiving_tds"),
+                "receiving_fumbles": s.get("receiving_fumbles"),
+                "receiving_fumbles_lost": s.get("receiving_fumbles_lost"),
+                "receiving_air_yards": s.get("receiving_air_yards"),
+                "receiving_yards_after_catch": s.get("receiving_yards_after_catch"),
+                "receiving_2pt_conversions": s.get("receiving_2pt_conversions"),
+                "fantasy_points": s.get("fantasy_points"),
+                "fantasy_points_ppr": s.get("fantasy_points_ppr"),
+                "special_teams_tds": s.get("special_teams_tds"),
+                "source": source,
+            }
 
-            if existing:
-                for col in (
-                    "player_name", "player_display_name", "position",
-                    "position_group", "team", "season_type", "opponent_team",
-                    "completions", "attempts", "passing_yards", "passing_tds",
-                    "interceptions", "sacks", "sack_yards", "passing_air_yards",
-                    "passing_yards_after_catch", "passing_2pt_conversions",
-                    "carries", "rushing_yards", "rushing_tds", "rushing_fumbles",
-                    "rushing_fumbles_lost", "rushing_2pt_conversions",
-                    "receptions", "targets", "receiving_yards", "receiving_tds",
-                    "receiving_fumbles", "receiving_fumbles_lost",
-                    "receiving_air_yards", "receiving_yards_after_catch",
-                    "receiving_2pt_conversions",
-                    "fantasy_points", "fantasy_points_ppr", "special_teams_tds",
-                ):
-                    if s.get(col) is not None:
-                        setattr(existing, col, s[col])
-                updated += 1
+            if strategy in ("merge", "replace"):
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                stmt = pg_insert(PlayerStat).values(**values)
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_player_stats_natural_key",
+                    set_={col: stmt.excluded[col] for col in _STAT_UPDATE_COLS},
+                )
+                result = session.execute(stmt)
+                # rowcount == 1 for both insert and update; we can't distinguish
+                # perfectly, but the key point is no duplicates are created.
+                if result.rowcount:
+                    updated += 1
             else:
-                session.add(PlayerStat(
-                    player_id=pid,
-                    player_name=s.get("player_name", ""),
-                    player_display_name=s.get("player_display_name"),
-                    position=s.get("position"),
-                    position_group=s.get("position_group"),
-                    team=s.get("team"),
-                    season=season,
-                    week=week,
-                    stat_type=stat_type,
-                    season_type=s.get("season_type"),
-                    opponent_team=s.get("opponent_team"),
-                    completions=s.get("completions"),
-                    attempts=s.get("attempts"),
-                    passing_yards=s.get("passing_yards"),
-                    passing_tds=s.get("passing_tds"),
-                    interceptions=s.get("interceptions"),
-                    sacks=s.get("sacks"),
-                    sack_yards=s.get("sack_yards"),
-                    passing_air_yards=s.get("passing_air_yards"),
-                    passing_yards_after_catch=s.get("passing_yards_after_catch"),
-                    passing_2pt_conversions=s.get("passing_2pt_conversions"),
-                    carries=s.get("carries"),
-                    rushing_yards=s.get("rushing_yards"),
-                    rushing_tds=s.get("rushing_tds"),
-                    rushing_fumbles=s.get("rushing_fumbles"),
-                    rushing_fumbles_lost=s.get("rushing_fumbles_lost"),
-                    rushing_2pt_conversions=s.get("rushing_2pt_conversions"),
-                    receptions=s.get("receptions"),
-                    targets=s.get("targets"),
-                    receiving_yards=s.get("receiving_yards"),
-                    receiving_tds=s.get("receiving_tds"),
-                    receiving_fumbles=s.get("receiving_fumbles"),
-                    receiving_fumbles_lost=s.get("receiving_fumbles_lost"),
-                    receiving_air_yards=s.get("receiving_air_yards"),
-                    receiving_yards_after_catch=s.get("receiving_yards_after_catch"),
-                    receiving_2pt_conversions=s.get("receiving_2pt_conversions"),
-                    fantasy_points=s.get("fantasy_points"),
-                    fantasy_points_ppr=s.get("fantasy_points_ppr"),
-                    special_teams_tds=s.get("special_teams_tds"),
-                    source=s.get("source", collector_type),
-                ))
+                # append strategy — always insert
+                session.add(PlayerStat(**values))
                 inserted += 1
 
         session.commit()
@@ -594,6 +602,16 @@ def run_import(
             f"for {collector_type} seasons={seasons}"
         )
         logger.error(msg)
+        _update_history(
+            history_id,
+            status="failed",
+            error_message=msg,
+            finished_at=datetime.now(UTC),
+        )
+        return {"status": "failed", "error": msg}
+    except Exception as exc:
+        msg = f"Persist failed for {collector_type} seasons={seasons}: {exc}"
+        logger.error(msg, exc_info=True)
         _update_history(
             history_id,
             status="failed",

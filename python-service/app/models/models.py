@@ -228,6 +228,7 @@ class PlayerStat(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("player_id", "season", "week", "stat_type", "source", name="uq_player_stats_natural_key"),
         Index("ix_player_stats_pid_season_week_type_src", "player_id", "season", "week", "stat_type", "source"),
         Index("ix_player_stats_team_season", "team", "season"),
         Index("ix_player_stats_position_season", "position", "season"),

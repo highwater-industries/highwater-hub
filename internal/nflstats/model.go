@@ -92,8 +92,10 @@ type Game struct {
 // --------------------------------------------------------------------------
 
 // SeasonTotals holds aggregated stats for a single season.
+// SeasonType is "REG", "POST", or "total" (REG+POST summed).
 type SeasonTotals struct {
 	Season           int      `json:"season"`
+	SeasonType       string   `json:"season_type"`
 	GamesPlayed      int      `json:"games_played"`
 	Completions      *int     `json:"completions,omitempty"`
 	Attempts         *int     `json:"attempts,omitempty"`

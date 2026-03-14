@@ -19,7 +19,15 @@ func HandleListStats(store StatStore) http.HandlerFunc {
 		p := httputil.ParsePagination(r.URL.Query().Get("offset"), r.URL.Query().Get("limit"))
 		filter := parseStatFilter(r)
 
-		stats, total, err := store.ListStats(r.Context(), filter, p.Offset, p.Limit)
+		var stats []PlayerStat
+		var total int
+		var err error
+
+		if filter.GroupBy == "season" {
+			stats, total, err = store.ListSeasonStats(r.Context(), filter, p.Offset, p.Limit)
+		} else {
+			stats, total, err = store.ListStats(r.Context(), filter, p.Offset, p.Limit)
+		}
 		if err != nil {
 			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{Error: "failed to list stats"})
 			return
@@ -179,12 +187,16 @@ func parseStatFilter(r *http.Request) StatFilter {
 	if v := r.URL.Query().Get("stat_type"); v != "" {
 		f.StatType = &v
 	}
+	if v := r.URL.Query().Get("season_type"); v != "" {
+		f.SeasonType = &v
+	}
 	if v := r.URL.Query().Get("source"); v != "" {
 		f.Source = &v
 	}
 
 	f.Sort = r.URL.Query().Get("sort")
 	f.Order = r.URL.Query().Get("order")
+	f.GroupBy = r.URL.Query().Get("group_by")
 
 	return f
 }

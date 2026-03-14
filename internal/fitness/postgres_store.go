@@ -81,6 +81,15 @@ func (s *PostgresStore) EnsureTables(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_workout_exercises_workout_id ON workout_exercises(workout_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_workout_exercises_exercise_id ON workout_exercises(exercise_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_workout_sets_we_id ON workout_sets(workout_exercise_id)`,
+		`CREATE TABLE IF NOT EXISTS bodyweight_log (
+			id SERIAL PRIMARY KEY,
+			user_id INT REFERENCES fitness_users(id) ON DELETE CASCADE NOT NULL,
+			weight_lbs REAL NOT NULL,
+			logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			notes TEXT,
+			created_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_bodyweight_log_user_date ON bodyweight_log(user_id, logged_at DESC)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
@@ -405,6 +414,99 @@ func (s *PostgresStore) GetUserProgress(ctx context.Context, userID, sessionLimi
 		})
 	}
 	return cards, nil
+}
+
+// --------------------------------------------------------------------------
+// Bodyweight
+// --------------------------------------------------------------------------
+
+// LogBodyweight inserts a new bodyweight entry for a user.
+func (s *PostgresStore) LogBodyweight(ctx context.Context, userID int, weightLbs float64, loggedAt *time.Time, notes *string) (BodyweightEntry, error) {
+	var la interface{}
+	if loggedAt != nil {
+		la = *loggedAt
+	}
+	var n interface{}
+	if notes != nil {
+		n = *notes
+	}
+
+	var bw BodyweightEntry
+	var rNotes sql.NullString
+	err := s.db.QueryRowContext(ctx,
+		`INSERT INTO bodyweight_log (user_id, weight_lbs, logged_at, notes)
+		 VALUES ($1, $2, COALESCE($3::timestamptz, NOW()), $4)
+		 RETURNING id, user_id, weight_lbs, logged_at, notes, created_at`,
+		userID, weightLbs, la, n,
+	).Scan(&bw.ID, &bw.UserID, &bw.WeightLbs, &bw.LoggedAt, &rNotes, &bw.CreatedAt)
+	if err != nil {
+		return BodyweightEntry{}, fmt.Errorf("log bodyweight: %w", err)
+	}
+	if rNotes.Valid {
+		bw.Notes = &rNotes.String
+	}
+	return bw, nil
+}
+
+// GetLatestBodyweight returns the most recent bodyweight entry for a user, or nil.
+func (s *PostgresStore) GetLatestBodyweight(ctx context.Context, userID int) (*BodyweightEntry, error) {
+	var bw BodyweightEntry
+	var rNotes sql.NullString
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, user_id, weight_lbs, logged_at, notes, created_at
+		 FROM bodyweight_log
+		 WHERE user_id = $1
+		 ORDER BY logged_at DESC
+		 LIMIT 1`, userID,
+	).Scan(&bw.ID, &bw.UserID, &bw.WeightLbs, &bw.LoggedAt, &rNotes, &bw.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get latest bodyweight: %w", err)
+	}
+	if rNotes.Valid {
+		bw.Notes = &rNotes.String
+	}
+	return &bw, nil
+}
+
+// ListBodyweightHistory returns the last N bodyweight entries for a user.
+func (s *PostgresStore) ListBodyweightHistory(ctx context.Context, userID int, limit int) ([]BodyweightEntry, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, weight_lbs, logged_at, notes, created_at
+		 FROM bodyweight_log
+		 WHERE user_id = $1
+		 ORDER BY logged_at DESC
+		 LIMIT $2`, userID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list bodyweight history: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []BodyweightEntry
+	for rows.Next() {
+		var bw BodyweightEntry
+		var rNotes sql.NullString
+		if err := rows.Scan(&bw.ID, &bw.UserID, &bw.WeightLbs, &bw.LoggedAt, &rNotes, &bw.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan bodyweight: %w", err)
+		}
+		if rNotes.Valid {
+			bw.Notes = &rNotes.String
+		}
+		entries = append(entries, bw)
+	}
+	return entries, rows.Err()
+}
+
+// DeleteBodyweight removes a bodyweight entry by ID.
+func (s *PostgresStore) DeleteBodyweight(ctx context.Context, id int) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bodyweight_log WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete bodyweight: %w", err)
+	}
+	return nil
 }
 
 // --------------------------------------------------------------------------

@@ -94,3 +94,28 @@ func (c *Client) GetJobStatus(ctx context.Context, jobID string) (JobStatus, err
 
 	return result, nil
 }
+
+// RevokeTask asks the Python service to revoke (terminate) a Celery task.
+// This is best-effort: we don't fail the overall abort if revoke fails.
+func (c *Client) RevokeTask(ctx context.Context, celeryTaskID string) error {
+	httpReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		c.baseURL+"/api/v1/nflstats/jobs/"+celeryTaskID+"/revoke",
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("build revoke request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("do revoke request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("revoke unexpected status: %d", resp.StatusCode)
+	}
+	return nil
+}

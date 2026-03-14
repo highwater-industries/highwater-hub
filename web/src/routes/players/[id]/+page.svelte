@@ -5,6 +5,48 @@
 	let summary: PlayerSummary | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
+	let seasonTypeFilter = $state('total');
+
+	// Derived filtered data based on season_type filter
+	let filteredSeasons = $derived.by(() => {
+		const seasons = summary?.seasons ?? [];
+		if (seasonTypeFilter === 'ALL') return seasons;
+		return seasons.filter(s => s.season_type === seasonTypeFilter);
+	});
+
+	let filteredGames = $derived.by(() => {
+		const games = summary?.recent_games ?? [];
+		if (seasonTypeFilter === 'ALL' || seasonTypeFilter === 'total') return games;
+		return games.filter(g => g.season_type === seasonTypeFilter);
+	});
+
+	// Recompute career totals from filtered seasons (so they match the filter)
+	let filteredCareer = $derived.by(() => {
+		if (!summary) return summary?.career_totals;
+		if (seasonTypeFilter === 'total' || seasonTypeFilter === 'ALL') return summary.career_totals;
+		// Sum the filtered season rows to produce filtered career totals
+		const rows = filteredSeasons;
+		if (!rows.length) return { season: 0, season_type: 'career', games_played: 0 } as SeasonTotals;
+		const total: SeasonTotals = { season: 0, season_type: 'career', games_played: 0 };
+		for (const r of rows) {
+			total.games_played += r.games_played ?? 0;
+			total.completions = (total.completions ?? 0) + (r.completions ?? 0);
+			total.attempts = (total.attempts ?? 0) + (r.attempts ?? 0);
+			total.passing_yards = (total.passing_yards ?? 0) + (r.passing_yards ?? 0);
+			total.passing_tds = (total.passing_tds ?? 0) + (r.passing_tds ?? 0);
+			total.interceptions = (total.interceptions ?? 0) + (r.interceptions ?? 0);
+			total.carries = (total.carries ?? 0) + (r.carries ?? 0);
+			total.rushing_yards = (total.rushing_yards ?? 0) + (r.rushing_yards ?? 0);
+			total.rushing_tds = (total.rushing_tds ?? 0) + (r.rushing_tds ?? 0);
+			total.receptions = (total.receptions ?? 0) + (r.receptions ?? 0);
+			total.targets = (total.targets ?? 0) + (r.targets ?? 0);
+			total.receiving_yards = (total.receiving_yards ?? 0) + (r.receiving_yards ?? 0);
+			total.receiving_tds = (total.receiving_tds ?? 0) + (r.receiving_tds ?? 0);
+			total.fantasy_points = (total.fantasy_points ?? 0) + (r.fantasy_points ?? 0);
+			total.fantasy_points_ppr = (total.fantasy_points_ppr ?? 0) + (r.fantasy_points_ppr ?? 0);
+		}
+		return total;
+	});
 
 	async function loadSummary(id: number) {
 		loading = true;
@@ -133,7 +175,6 @@
 {:else if summary}
 	{@const p = summary.player}
 	{@const pos = p.player_position}
-	{@const career = summary.career_totals}
 	{@const seasonCols = positionStatKeys(pos)}
 	{@const gameCols = gameStatKeys(pos)}
 
@@ -202,19 +243,34 @@
 		</div>
 	</div>
 
+	<!-- PAGE-WIDE FILTER BAR -->
+	<div class="flex flex-wrap gap-2 mb-6 items-center bg-base-200 rounded-lg px-4 py-2 border border-base-300">
+		<span class="text-xs font-bold opacity-50 uppercase tracking-wider mr-1">Filter:</span>
+		<select class="select select-bordered select-sm" bind:value={seasonTypeFilter}>
+			<option value="total">Total</option>
+			<option value="REG">Regular Season</option>
+			<option value="POST">Postseason</option>
+			<option value="ALL">All (breakdown)</option>
+		</select>
+		{#if seasonTypeFilter !== 'total'}
+			<button class="btn btn-ghost btn-sm" onclick={() => seasonTypeFilter = 'total'}>Reset</button>
+			<span class="text-xs opacity-50">Showing {seasonTypeFilter === 'ALL' ? 'full breakdown' : seasonTypeFilter + ' only'}</span>
+		{/if}
+	</div>
+
 	<!-- CAREER TOTALS — stat cards row -->
-	{#if career.games_played > 0}
+	{#if filteredCareer && filteredCareer.games_played > 0}
 		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// CAREER TOTALS</h2>
+			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// CAREER TOTALS{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-3">
 				<div class="card bg-base-200 border border-base-300 p-3 text-center">
 					<div class="text-xs opacity-50 uppercase tracking-wider">Games</div>
-					<div class="text-xl font-bold text-accent">{fmtNum(career.games_played)}</div>
+					<div class="text-xl font-bold text-accent">{fmtNum(filteredCareer?.games_played)}</div>
 				</div>
 				{#each seasonCols.slice(0, 7) as col}
 					<div class="card bg-base-200 border border-base-300 p-3 text-center">
 						<div class="text-xs opacity-50 uppercase tracking-wider">{col.label}</div>
-						<div class="text-xl font-bold text-accent">{fmtNum(career[col.key] as number)}</div>
+						<div class="text-xl font-bold text-accent">{fmtNum(filteredCareer?.[col.key] as number)}</div>
 					</div>
 				{/each}
 			</div>
@@ -222,15 +278,16 @@
 	{/if}
 
 	<!-- SEASON-BY-SEASON TABLE -->
-	{#if (summary.seasons ?? []).length > 0}
+	{#if filteredSeasons.length > 0}
 		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// SEASON BY SEASON</h2>
+			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// SEASON BY SEASON{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
 			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
 				<div class="table-scroll-wrap">
 					<table class="table table-zebra table-pin-rows table-sm table-responsive">
 						<thead>
 							<tr>
 								<th>Season</th>
+								<th></th>
 								<th class="text-right">GP</th>
 								{#each seasonCols as col}
 									<th class="text-right">{col.label}</th>
@@ -238,9 +295,11 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each summary.seasons as season}
-								<tr class="hover">
-									<td class="font-bold text-primary">{season.season}</td>
+							{#each filteredSeasons as season}
+								{@const isTotal = season.season_type === 'total'}
+								<tr class="hover {isTotal && seasonTypeFilter === 'ALL' ? 'font-semibold' : ''}">
+									<td class="font-bold text-primary">{season.season || ''}</td>
+								<td>{season.season_type}</td>
 									<td class="text-right">{season.games_played}</td>
 									{#each seasonCols as col}
 										<td class="text-right">{fmtNum(season[col.key] as number)}</td>
@@ -255,9 +314,9 @@
 	{/if}
 
 	<!-- RECENT GAME LOG -->
-	{#if (summary.recent_games ?? []).length > 0}
+	{#if filteredGames.length > 0}
 		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// RECENT GAMES</h2>
+			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// RECENT GAMES{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
 			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
 				<div class="table-scroll-wrap">
 					<table class="table table-zebra table-pin-rows table-sm table-responsive">
@@ -272,7 +331,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each summary.recent_games as g}
+							{#each filteredGames as g}
 								<tr class="hover">
 									<td>{g.season}</td>
 									<td>{g.week}</td>
