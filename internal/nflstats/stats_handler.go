@@ -1,6 +1,7 @@
 package nflstats
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -23,12 +24,13 @@ func HandleListStats(store StatStore) http.HandlerFunc {
 		var total int
 		var err error
 
-		if filter.GroupBy == "season" {
+		if filter.GroupBy == "season" || filter.GroupBy == "season_total" {
 			stats, total, err = store.ListSeasonStats(r.Context(), filter, p.Offset, p.Limit)
 		} else {
 			stats, total, err = store.ListStats(r.Context(), filter, p.Offset, p.Limit)
 		}
 		if err != nil {
+			slog.Error("failed to list stats", "error", err, "group_by", filter.GroupBy)
 			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{Error: "failed to list stats"})
 			return
 		}

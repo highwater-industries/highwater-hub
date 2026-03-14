@@ -61,9 +61,13 @@
 			if (season !== undefined) filter.season = season;
 			if (week !== undefined) filter.week = week;
 			if (statType) filter.stat_type = statType;
-			if (seasonType) filter.season_type = seasonType;
+			if (seasonType === 'TOTAL') {
+				filter.group_by = 'season_total';
+			} else {
+				if (seasonType) filter.season_type = seasonType;
+				if (groupBy) filter.group_by = groupBy;
+			}
 			if (source) filter.source = source;
-			if (groupBy) filter.group_by = groupBy;
 			if (sortCol) filter.sort = sortCol;
 			if (sortOrder) filter.order = sortOrder;
 
@@ -286,6 +290,7 @@ leaderPosition || undefined,
 			<option value="">All Szn Types</option>
 			<option value="REG">REG</option>
 			<option value="POST">POST</option>
+			<option value="TOTAL">Total (REG+POST)</option>
 		</select>
 		<select class="select select-bordered select-sm" bind:value={source} onchange={applyFilters}>
 			<option value="">All Sources</option>
@@ -312,7 +317,7 @@ leaderPosition || undefined,
 							<th class="sortable" onclick={() => toggleSort('team')}>Team{sortIndicator('team')}</th>
 							<th class="sortable" onclick={() => toggleSort('position')}>Pos{sortIndicator('position')}</th>
 							<th class="sortable" onclick={() => toggleSort('season')}>Szn{sortIndicator('season')}</th>
-							<th class="sortable" onclick={() => toggleSort('week')}>{groupBy === 'season' ? 'GP' : 'Wk'}{sortIndicator('week')}</th>
+							<th class="sortable" onclick={() => toggleSort('week')}>{groupBy === 'season' || seasonType === 'TOTAL' ? 'GP' : 'Wk'}{sortIndicator('week')}</th>
 							<th class="sortable" onclick={() => toggleSort('season_type')}>Type{sortIndicator('season_type')}</th>
 							<th class="sortable text-right" onclick={() => toggleSort('passing_yards')}>Pass Yd{sortIndicator('passing_yards')}</th>
 							<th class="sortable text-right" onclick={() => toggleSort('passing_tds')}>Pass TD{sortIndicator('passing_tds')}</th>

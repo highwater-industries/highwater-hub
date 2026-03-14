@@ -86,6 +86,16 @@ func (s *PostgresStatStore) ListStats(ctx context.Context, f StatFilter, offset,
 func (s *PostgresStatStore) ListSeasonStats(ctx context.Context, f StatFilter, offset, limit int) ([]PlayerStat, int, error) {
 	where, args := buildStatWhere(f)
 
+	// When GroupBy is "season_total", combine REG+POST into one row per player/season.
+	// When GroupBy is "season", keep separate REG / POST rows.
+	combineTypes := f.GroupBy == "season_total"
+	seasonTypeSelect := "d.season_type"
+	seasonTypeGroup := ", d.season_type"
+	if combineTypes {
+		seasonTypeSelect = "'TOTAL' AS season_type"
+		seasonTypeGroup = ""
+	}
+
 	// Build the aggregation query — dedup first, then group
 	baseSQL := `
 		WITH deduped AS (
@@ -103,7 +113,7 @@ func (s *PostgresStatStore) ListSeasonStats(ctx context.Context, f StatFilter, o
 			MAX(d.position_group)       AS position_group,
 			MAX(d.team)                 AS team,
 			d.season,
-			d.season_type,
+			` + seasonTypeSelect + `,
 			COUNT(DISTINCT d.week)      AS games_played,
 			SUM(d.completions)          AS completions,
 			SUM(d.attempts)             AS attempts,
@@ -121,7 +131,7 @@ func (s *PostgresStatStore) ListSeasonStats(ctx context.Context, f StatFilter, o
 			SUM(d.fantasy_points_ppr)   AS fantasy_points_ppr
 		FROM deduped d
 		LEFT JOIN players p ON d.player_id = p.player_id
-		GROUP BY p.id, d.player_id, d.player_name, d.season, d.season_type
+		GROUP BY p.id, d.player_id, d.player_name, d.season` + seasonTypeGroup + `
 	`
 
 	// Count total rows (each group = one row)
@@ -132,7 +142,7 @@ func (s *PostgresStatStore) ListSeasonStats(ctx context.Context, f StatFilter, o
 	}
 
 	// Add ordering
-	orderBy := buildSeasonStatOrderBy(f.Sort, f.Order)
+	orderBy := buildSeasonStatOrderBy(f.Sort, f.Order, f.GroupBy)
 	querySQL := baseSQL + " " + orderBy + fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, limit, offset)
 
@@ -226,18 +236,18 @@ func scanSeasonStatRow(rows *sql.Rows) (PlayerStat, error) {
 	return st, nil
 }
 
-func buildSeasonStatOrderBy(sort, order string) string {
+func buildSeasonStatOrderBy(sort, order, groupBy string) string {
 	dir := "DESC"
 	if order == "asc" || order == "ASC" {
 		dir = "ASC"
 	}
+	combineTypes := groupBy == "season_total"
 	// Map frontend column names to aggregated aliases
 	validCols := map[string]string{
 		"player_name":        "d.player_name",
 		"team":               "team",
 		"position":           "position",
 		"season":             "d.season",
-		"season_type":        "d.season_type",
 		"week":               "games_played",
 		"passing_yards":      "passing_yards",
 		"passing_tds":        "passing_tds",
@@ -251,8 +261,14 @@ func buildSeasonStatOrderBy(sort, order string) string {
 		"fantasy_points":     "fantasy_points",
 		"fantasy_points_ppr": "fantasy_points_ppr",
 	}
+	if !combineTypes {
+		validCols["season_type"] = "d.season_type"
+	}
 	if col, ok := validCols[sort]; ok {
 		return fmt.Sprintf("ORDER BY %s %s NULLS LAST", col, dir)
+	}
+	if combineTypes {
+		return "ORDER BY d.season DESC, fantasy_points_ppr DESC NULLS LAST"
 	}
 	return "ORDER BY d.season DESC, d.season_type, fantasy_points_ppr DESC NULLS LAST"
 }
