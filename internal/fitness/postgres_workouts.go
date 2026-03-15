@@ -28,7 +28,22 @@ func (s *PostgresStore) ListWorkouts(ctx context.Context, userID int, offset, li
 		SELECT w.id, w.user_id, w.started_at, w.completed_at, w.notes, w.is_deload, w.created_at,
 		       COALESCE(COUNT(DISTINCT we.id), 0),
 		       COALESCE(COUNT(ws.id), 0),
-		       COALESCE(string_agg(DISTINCT e.name, ', ' ORDER BY e.name), '')
+		       COALESCE(string_agg(DISTINCT e.name, ', ' ORDER BY e.name), ''),
+		       COALESCE((
+		           SELECT json_agg(row_to_json(sub) ORDER BY sub.name)::text
+		           FROM (
+		               SELECT e2.name,
+		                      COUNT(ws2.id) AS sets,
+		                      COALESCE(SUM(ws2.reps), 0) AS total_reps,
+		                      COALESCE(MAX(ws2.weight), 0) AS max_weight,
+		                      COALESCE(json_agg(ws2.reps ORDER BY ws2.set_number) FILTER (WHERE ws2.reps IS NOT NULL), '[]') AS reps_list
+		               FROM workout_exercises we2
+		               JOIN exercises e2 ON e2.id = we2.exercise_id
+		               LEFT JOIN workout_sets ws2 ON ws2.workout_exercise_id = we2.id
+		               WHERE we2.workout_id = w.id
+		               GROUP BY e2.name
+		           ) sub
+		       ), '[]')
 		FROM workouts w
 		LEFT JOIN workout_exercises we ON we.workout_id = w.id
 		LEFT JOIN workout_sets ws ON ws.workout_exercise_id = we.id
@@ -483,7 +498,7 @@ func scanWorkoutSummaryRow(rows *sql.Rows) (WorkoutSummary, error) {
 
 	err := rows.Scan(
 		&ws.ID, &ws.UserID, &ws.StartedAt, &completedAt, &notes, &ws.IsDeload, &ws.CreatedAt,
-		&ws.ExerciseCount, &ws.SetCount, &ws.ExerciseNames,
+		&ws.ExerciseCount, &ws.SetCount, &ws.ExerciseNames, &ws.ExerciseDetails,
 	)
 	if err != nil {
 		return WorkoutSummary{}, err

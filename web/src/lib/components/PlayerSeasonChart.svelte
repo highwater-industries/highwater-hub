@@ -165,7 +165,7 @@
 				show: true,
 				position: 'top',
 				horizontalAlign: 'left',
-				labels: { colors: 'var(--color-base-content)' },
+				labels: { colors },
 			},
 			grid: {
 				borderColor: 'var(--color-base-content/0.08)',

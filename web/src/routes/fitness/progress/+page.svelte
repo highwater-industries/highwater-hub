@@ -157,13 +157,13 @@
 				},
 				yaxis: [
 					{
-						labels: { style: { fontSize: '10px', colors: ['rgba(128,128,128,0.6)'] } },
-						title: { text: '' },
+						title: { text: primaryLabel, style: { color: '#167bff', fontSize: '10px', fontWeight: '600' } },
+						labels: { style: { fontSize: '10px', colors: ['#167bff'] } },
 					},
 					{
 						opposite: true,
-						labels: { style: { fontSize: '10px', colors: ['rgba(128,128,128,0.6)'] } },
-						title: { text: '' },
+						title: { text: secondaryLabel, style: { color: '#a855f7', fontSize: '10px', fontWeight: '600' } },
+						labels: { style: { fontSize: '10px', colors: ['#a855f7'] } },
 					}
 				],
 				stroke: { curve: 'smooth', width: [2.5, 1.5] },
@@ -178,7 +178,7 @@
 					padding: { left: 4, right: 4, top: -8, bottom: 0 },
 				},
 				dataLabels: { enabled: false },
-				legend: { show: true, position: 'top', fontSize: '11px', labels: { colors: ['rgba(128,128,128,0.7)'] }, markers: { size: 4 }, itemMargin: { horizontal: 8 } },
+				legend: { show: true, position: 'top', fontSize: '11px', labels: { colors: ['#167bff', '#a855f7'] }, markers: { size: 4 }, itemMargin: { horizontal: 8 } },
 				tooltip: {
 					theme: 'dark',
 					shared: true,

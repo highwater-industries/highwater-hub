@@ -28,10 +28,9 @@
         }
     }
 
-    .apexcharts-xaxis,
-    .apexcharts-yaxis {
+    .apexcharts-xaxis {
         text {
-            @apply fill-base-content!;
+            @apply fill-base-content;
         }
     }
 
@@ -63,7 +62,7 @@
     }
 
     .apexcharts-legend-text {
-        @apply text-base-content!;
+        @apply text-base-content;
     }
 
     .apexcharts-series-markers-wrap {

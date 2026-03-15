@@ -540,6 +540,7 @@ export interface WorkoutSummary {
 	exercise_count: number;
 	set_count: number;
 	exercise_names?: string;
+	exercise_details?: string;
 }
 
 export interface WorkoutSet {

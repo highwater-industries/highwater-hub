@@ -204,9 +204,40 @@
 	};
 
 	function exerciseCategories(names?: string): string[] {
-		// Parse exercise_names to extract unique implied categories (heuristic)
 		if (!names) return [];
 		return names.split(', ').slice(0, 4);
+	}
+
+	interface ExerciseDetail {
+		name: string;
+		sets: number;
+		total_reps: number;
+		max_weight: number;
+		reps_list: number[];
+	}
+
+	function parseExerciseDetails(raw?: string): ExerciseDetail[] {
+		if (!raw || raw === '[]') return [];
+		try {
+			return JSON.parse(raw) as ExerciseDetail[];
+		} catch {
+			return [];
+		}
+	}
+
+	/** Format reps_list like "3×8" or "4×3, 1×5" */
+	function formatRepPattern(reps: number[]): string {
+		if (!reps || reps.length === 0) return '0r';
+		const groups: { count: number; reps: number }[] = [];
+		for (const r of reps) {
+			const last = groups[groups.length - 1];
+			if (last && last.reps === r) {
+				last.count++;
+			} else {
+				groups.push({ count: 1, reps: r });
+			}
+		}
+		return groups.map(g => `${g.count}×${g.reps}`).join(', ');
 	}
 
 	// Derived: separate active and completed workouts
@@ -332,13 +363,13 @@
 			},
 			yaxis: [
 				{
-					labels: { style: { fontSize: '10px', colors: ['rgba(128,128,128,0.6)'] } },
-					title: { text: '' },
+					title: { text: primaryLabel, style: { color: '#167bff', fontSize: '10px', fontWeight: '600' } },
+					labels: { style: { fontSize: '10px', colors: ['#167bff'] } },
 				},
 				{
 					opposite: true,
-					labels: { style: { fontSize: '10px', colors: ['rgba(128,128,128,0.6)'] } },
-					title: { text: '' },
+					title: { text: secondaryLabel, style: { color: '#a855f7', fontSize: '10px', fontWeight: '600' } },
+					labels: { style: { fontSize: '10px', colors: ['#a855f7'] } },
 				}
 			],
 			stroke: { curve: 'smooth', width: [2.5, 1.5] },
@@ -353,7 +384,7 @@
 				padding: { left: 4, right: 4, top: -8, bottom: 0 },
 			},
 			dataLabels: { enabled: false },
-			legend: { show: true, position: 'top', fontSize: '11px', labels: { colors: ['rgba(128,128,128,0.7)'] }, markers: { size: 4 }, itemMargin: { horizontal: 8 } },
+			legend: { show: true, position: 'top', fontSize: '11px', labels: { colors: ['#167bff', '#a855f7'] }, markers: { size: 4 }, itemMargin: { horizontal: 8 } },
 			tooltip: {
 				theme: 'dark',
 				shared: true,
@@ -625,7 +656,8 @@
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 				{#each completedWorkouts as w}
 					{@const dur = duration(w.started_at, w.completed_at)}
-					{@const exercises = exerciseCategories(w.exercise_names)}
+				{@const exercises = exerciseCategories(w.exercise_names)}
+					{@const details = parseExerciseDetails(w.exercise_details)}
 					<div class="card bg-base-100 shadow-sm hover:shadow-md transition-all overflow-hidden group">
 						<!-- Colored top strip -->
 						<div class="h-1 bg-gradient-to-r from-success/60 to-success/20"></div>
@@ -704,15 +736,21 @@
 										{/each}
 									{/if}
 								</div>
+							{/if}
 
-								<!-- Quick per-exercise overview -->
-								<div class="text-[11px] text-base-content/50 flex items-center gap-1.5 px-0.5">
-									<span class="iconify lucide--list size-3 text-base-content/30"></span>
-									<span>{w.set_count} total sets across {w.exercise_count} exercise{w.exercise_count !== 1 ? 's' : ''}</span>
-									{#if w.exercise_count > 0}
-										<span class="text-base-content/30">·</span>
-										<span>~{Math.round(w.set_count / w.exercise_count)} sets each</span>
-									{/if}
+							<!-- Per-exercise breakdown -->
+							{#if details.length > 0}
+								<div class="grid gap-1 mt-1">
+									{#each details as d}
+										<div class="flex items-center gap-2 text-[11px] leading-tight px-0.5">
+											<span class="text-base-content/70 font-medium truncate min-w-0 flex-1">{d.name}</span>
+											<span class="text-base-content/50 tabular-nums whitespace-nowrap shrink-0">
+												{formatRepPattern(d.reps_list)}{#if d.max_weight > 0}
+													<span class="text-base-content/30 mx-0.5">@</span>{d.max_weight}lb
+												{/if}
+											</span>
+										</div>
+									{/each}
 								</div>
 							{/if}
 

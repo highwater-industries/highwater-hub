@@ -24,16 +24,17 @@ type Exercise struct {
 
 // WorkoutSummary is the list/dashboard view of a workout.
 type WorkoutSummary struct {
-	ID            int        `json:"id"`
-	UserID        int        `json:"user_id"`
-	StartedAt     time.Time  `json:"started_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	Notes         *string    `json:"notes,omitempty"`
-	IsDeload      bool       `json:"is_deload"`
-	ExerciseCount int        `json:"exercise_count"`
-	SetCount      int        `json:"set_count"`
-	ExerciseNames string     `json:"exercise_names"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID              int        `json:"id"`
+	UserID          int        `json:"user_id"`
+	StartedAt       time.Time  `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	Notes           *string    `json:"notes,omitempty"`
+	IsDeload        bool       `json:"is_deload"`
+	ExerciseCount   int        `json:"exercise_count"`
+	SetCount        int        `json:"set_count"`
+	ExerciseNames   string     `json:"exercise_names"`
+	ExerciseDetails string     `json:"exercise_details"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // WorkoutDetail is the full detail view including exercises and sets.
