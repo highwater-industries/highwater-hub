@@ -59,6 +59,17 @@ export const appMenuItems: ISidebarMenuItem[] = [
         url: "/rankings",
     },
     {
+        id: "fantasy-label",
+        isTitle: true,
+        label: "Fantasy",
+    },
+    {
+        id: "leagues",
+        icon: "lucide--shield",
+        label: "Leagues",
+        url: "/leagues",
+    },
+    {
         id: "system-label",
         isTitle: true,
         label: "System",

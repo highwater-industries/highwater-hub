@@ -765,3 +765,104 @@ export function updateSet(
 export function deleteSet(id: number): Promise<{ status: string }> {
 	return del(`/fitness/sets/${id}`);
 }
+
+// ── Fantasy Leagues ──
+
+export interface FantasyLeague {
+	id: number;
+	external_league_id: string;
+	league_name: string;
+	platform: string;
+	season: number;
+	num_teams?: number;
+	scoring_type?: string;
+	settings?: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface FantasyTeam {
+	id: number;
+	league_id: number;
+	external_team_id?: string;
+	team_name: string;
+	owner_name?: string;
+	wins: number;
+	losses: number;
+	ties: number;
+	points_for: number;
+	points_against: number;
+	standing_rank?: number;
+	playoff_seed?: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface FantasyRosterEntry {
+	id: number;
+	team_id: number;
+	player_id?: string;
+	player_name: string;
+	player_position: string;
+	nfl_team?: string;
+	roster_position?: string;
+	external_player_id?: string;
+	matched: boolean;
+	created_at: string;
+}
+
+export interface LeagueDetail {
+	league: FantasyLeague;
+	teams: FantasyTeam[];
+}
+
+export interface TeamDetail {
+	team: FantasyTeam;
+	roster: FantasyRosterEntry[];
+}
+
+export interface FantasyLeagueFilter {
+	platform?: string;
+	season?: number;
+	offset?: number;
+	limit?: number;
+}
+
+export interface FantasyImportRequest {
+	platform: string;
+	league_id: string;
+	season: number;
+	swid?: string;
+	espn_s2?: string;
+}
+
+export interface FantasyImportAccepted {
+	job_id: string;
+	status: string;
+	platform: string;
+	league_id: string;
+	season: number;
+}
+
+export function listFantasyLeagues(filter: FantasyLeagueFilter = {}): Promise<ListResponse<FantasyLeague>> {
+	const params = new URLSearchParams();
+	if (filter.platform) params.set('platform', filter.platform);
+	if (filter.season !== undefined) params.set('season', String(filter.season));
+	if (filter.offset !== undefined) params.set('offset', String(filter.offset));
+	if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+	const qs = params.toString();
+	return get(`/fantasy/leagues${qs ? '?' + qs : ''}`);
+}
+
+export function getFantasyLeague(id: number): Promise<LeagueDetail> {
+	return get(`/fantasy/leagues/${id}`);
+}
+
+export function getFantasyTeam(id: number): Promise<TeamDetail> {
+	return get(`/fantasy/teams/${id}`);
+}
+
+export function startFantasyImport(req: FantasyImportRequest): Promise<FantasyImportAccepted> {
+	return post('/fantasy/import', req);
+}
+

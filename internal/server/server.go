@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"myproject/internal/fantasy"
 	"myproject/internal/fitness"
 	"myproject/internal/jobs"
 	"myproject/internal/nflstats"
@@ -21,6 +22,8 @@ type Config struct {
 	GameStore      nflstats.GameStore
 	RankingStore   nflstats.RankingStore
 	FitnessStore   fitness.Store
+	FantasyStore   fantasy.Store
+	FantasyClient  *fantasy.Client
 }
 
 func NewServer(cfg Config) http.Handler {

@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/lib/pq" // Postgres driver — the underscore import registers it
 
+	"myproject/internal/fantasy"
 	"myproject/internal/fitness"
 	"myproject/internal/jobs"
 	"myproject/internal/nflstats"
@@ -59,6 +60,8 @@ func run(ctx context.Context) error {
 	gameStore := nflstats.NewPostgresGameStore(db)
 	rankingStore := nflstats.NewPostgresRankingStore(db)
 	fitnessStore := fitness.NewPostgresStore(db)
+	fantasyStore := fantasy.NewPostgresStore(db)
+	fantasyClient := fantasy.NewClient(pythonURL)
 
 	// ---- Fitness table init ----
 	if err := fitnessStore.EnsureTables(ctx); err != nil {
@@ -81,6 +84,8 @@ func run(ctx context.Context) error {
 		GameStore:      gameStore,
 		RankingStore:   rankingStore,
 		FitnessStore:   fitnessStore,
+		FantasyStore:   fantasyStore,
+		FantasyClient:  fantasyClient,
 	})
 
 	httpServer := &http.Server{

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"myproject/internal/fantasy"
 	"myproject/internal/fitness"
 	"myproject/internal/frontend"
 	"myproject/internal/jobs"
@@ -67,6 +68,12 @@ func addRoutes(mux *http.ServeMux, cfg Config) {
 	mux.HandleFunc("POST /api/fitness/workout-exercises/{id}/sets", fitness.HandleAddSet(cfg.FitnessStore))
 	mux.HandleFunc("PUT /api/fitness/sets/{id}", fitness.HandleUpdateSet(cfg.FitnessStore))
 	mux.HandleFunc("DELETE /api/fitness/sets/{id}", fitness.HandleDeleteSet(cfg.FitnessStore))
+
+	// Fantasy Leagues
+	mux.HandleFunc("POST /api/fantasy/import", fantasy.HandleStartImport(cfg.FantasyClient))
+	mux.HandleFunc("GET /api/fantasy/leagues/{id}", fantasy.HandleGetLeague(cfg.FantasyStore))
+	mux.HandleFunc("GET /api/fantasy/leagues", fantasy.HandleListLeagues(cfg.FantasyStore))
+	mux.HandleFunc("GET /api/fantasy/teams/{id}", fantasy.HandleGetTeam(cfg.FantasyStore))
 
 	// SvelteKit SPA — catch-all for non-API routes
 	mux.Handle("/", frontend.Handler())

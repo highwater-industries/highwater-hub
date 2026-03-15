@@ -5,8 +5,10 @@
 	import {
 		getInventory, runAudit, listJobs, listPlayers, startImport, batchImport, fullImport,
 		getJobSummary, cleanupStuckJobs, abortJob, abortAllJobs,
+		startFantasyImport,
 		type InventoryResponse, type InventoryRow, type AuditResult,
-		type Job, type JobSummary, type InventoryFilter, type JobFilter
+		type Job, type JobSummary, type InventoryFilter, type JobFilter,
+		type FantasyImportRequest
 	} from '$lib/api';
 	import { SEASONS, COLLECTOR_TYPES, SUMMARY_LEVELS, RANK_TYPES, IMPORT_PRESETS } from '$lib/constants';
 
@@ -105,6 +107,15 @@
 	let fullImportMessage = $state('');
 	let fullFromSeason = $state(2020);
 	let fullToSeason = $state(SEASONS[0]);
+
+	// Fantasy import state
+	let fantasyPlatform = $state('yahoo');
+	let fantasyLeagueId = $state('');
+	let fantasySeason = $state(SEASONS[0]);
+	let fantasySwid = $state('');
+	let fantasyEspnS2 = $state('');
+	let fantasyImporting = $state(false);
+	let fantasyMessage = $state('');
 
 	const strategies = [
 		{ value: 'merge', label: 'Merge', desc: 'Upsert — update existing, insert new' },
@@ -330,6 +341,26 @@
 			setTimeout(async () => { await refreshJobs(); startPolling(); }, 500);
 		} catch (e) { batchMessage = `Error: ${e}`; }
 		finally { batchImporting = false; }
+	}
+
+	async function triggerFantasyImport() {
+		fantasyImporting = true;
+		fantasyMessage = '';
+		try {
+			const req: FantasyImportRequest = {
+				platform: fantasyPlatform,
+				league_id: fantasyLeagueId,
+				season: fantasySeason
+			};
+			if (fantasyPlatform === 'espn') {
+				req.swid = fantasySwid;
+				req.espn_s2 = fantasyEspnS2;
+			}
+			const result = await startFantasyImport(req);
+			fantasyMessage = `Dispatched → ${result.job_id.slice(0, 8)}...`;
+			setTimeout(async () => { await refreshJobs(); startPolling(); }, 500);
+		} catch (e) { fantasyMessage = `Error: ${e}`; }
+		finally { fantasyImporting = false; }
 	}
 
 	async function triggerFullImport() {
@@ -786,6 +817,7 @@
 				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'batch'} onclick={() => importTab = 'batch'}>Quick Batch</button>
 				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'full'} onclick={() => importTab = 'full'}>Full Import</button>
 				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'custom'} onclick={() => importTab = 'custom'}>Custom</button>
+				<button role="tab" class="tab tab-sm" class:tab-active={importTab === 'fantasy'} onclick={() => importTab = 'fantasy'}>Fantasy League</button>
 			</div>
 
 			<!-- Quick Batch -->
@@ -866,6 +898,43 @@
 				<button class="btn btn-primary btn-xs mt-3 self-start" onclick={triggerImport} disabled={importing}>
 					{importing ? 'Dispatching...' : 'Launch Import'}
 				</button>
+
+			<!-- Fantasy League Import -->
+			{:else if importTab === 'fantasy'}
+				<p class="text-xs text-base-content/50 mb-2">Import a Yahoo or ESPN fantasy league — teams, rosters, and player matching.</p>
+				<div class="grid grid-cols-2 gap-x-3 gap-y-2 max-w-lg">
+					<div>
+						<div class="text-xs font-semibold opacity-50 mb-0.5">Platform</div>
+						<select class="select select-bordered select-xs w-full" bind:value={fantasyPlatform}>
+							<option value="yahoo">Yahoo</option>
+							<option value="espn">ESPN</option>
+						</select>
+					</div>
+					<div>
+						<div class="text-xs font-semibold opacity-50 mb-0.5">League ID</div>
+						<input class="input input-bordered input-xs w-full" bind:value={fantasyLeagueId} placeholder="e.g. 12345" />
+					</div>
+					<div>
+						<div class="text-xs font-semibold opacity-50 mb-0.5">Season</div>
+						<select class="select select-bordered select-xs w-full" bind:value={fantasySeason}>
+							{#each SEASONS as year}<option value={year}>{year}</option>{/each}
+						</select>
+					</div>
+					{#if fantasyPlatform === 'espn'}
+						<div>
+							<div class="text-xs font-semibold opacity-50 mb-0.5">SWID Cookie</div>
+							<input class="input input-bordered input-xs w-full" bind:value={fantasySwid} placeholder="XXXXXXXX-XXXX-..." />
+						</div>
+						<div class="col-span-2">
+							<div class="text-xs font-semibold opacity-50 mb-0.5">espn_s2 Cookie</div>
+							<input class="input input-bordered input-xs w-full" bind:value={fantasyEspnS2} placeholder="AEAB..." />
+						</div>
+					{/if}
+				</div>
+				<button class="btn btn-primary btn-xs mt-3 self-start" onclick={triggerFantasyImport} disabled={fantasyImporting || !fantasyLeagueId}>
+					{fantasyImporting ? 'Dispatching...' : 'Import League'}
+				</button>
+				{#if fantasyMessage}<p class="text-xs font-semibold mt-1" class:text-success={!fantasyMessage.startsWith('Error')} class:text-error={fantasyMessage.startsWith('Error')}>{fantasyMessage}</p>{/if}
 			{/if}
 		</div>
 	</div>

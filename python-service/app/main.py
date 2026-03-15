@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from app.database import create_tables
 from app.routes import nflstats
+from app.routes import fantasy
 
 # Import the data_collectors package so collector classes auto-register
 # with the CollectorFactory at startup.
@@ -36,6 +37,7 @@ app = FastAPI(
 )
 
 app.include_router(nflstats.router, prefix="/api/v1/nflstats", tags=["nflstats"])
+app.include_router(fantasy.router, prefix="/api/v1/fantasy", tags=["fantasy"])
 
 
 @app.get("/health")

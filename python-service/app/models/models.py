@@ -377,3 +377,154 @@ class CollectionHistory(Base):
 
     def __repr__(self) -> str:
         return f"<CollectionHistory {self.collector_type} {self.status}>"
+
+
+# ------------------------------------------------------------------
+# Fantasy Leagues — imported from Yahoo / ESPN / Sleeper
+# ------------------------------------------------------------------
+
+
+class FantasyLeague(Base):
+    """A fantasy football league imported from an external platform."""
+
+    __tablename__ = "fantasy_leagues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_league_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, index=True,
+        comment="League ID on the source platform",
+    )
+    league_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    platform: Mapped[str] = mapped_column(
+        String(50), nullable=False, comment="yahoo | espn | sleeper"
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    num_teams: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    scoring_type: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="e.g. head_to_head, roto"
+    )
+    settings: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True, default=dict,
+        comment="Full settings blob from the platform",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "external_league_id", "platform", "season",
+            name="uq_fantasy_league_ext_platform_season",
+        ),
+        Index("ix_fantasy_leagues_platform_season", "platform", "season"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<FantasyLeague {self.league_name} ({self.platform} {self.season})>"
+
+
+# ------------------------------------------------------------------
+# Fantasy Teams — teams within a league
+# ------------------------------------------------------------------
+
+
+class FantasyTeam(Base):
+    """A team within a fantasy league."""
+
+    __tablename__ = "fantasy_teams"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True,
+        comment="FK to fantasy_leagues.id",
+    )
+    external_team_id: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True,
+        comment="Team key on the source platform",
+    )
+    team_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    wins: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    losses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ties: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    points_for: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    points_against: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    standing_rank: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    playoff_seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_fantasy_teams_league", "league_id"),
+        UniqueConstraint(
+            "league_id", "external_team_id",
+            name="uq_fantasy_team_league_ext",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<FantasyTeam {self.team_name} ({self.owner_name})>"
+
+
+# ------------------------------------------------------------------
+# Fantasy Rosters — player slots on a team
+# ------------------------------------------------------------------
+
+
+class FantasyRoster(Base):
+    """A player's roster entry on a fantasy team.
+
+    Always stores the platform-reported name regardless of match status,
+    so data is never lost even when a player can't be resolved.
+    """
+
+    __tablename__ = "fantasy_rosters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True,
+        comment="FK to fantasy_teams.id",
+    )
+    player_id: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True,
+        comment="Resolved player_id from players table (NULL if unmatched)",
+    )
+    player_name: Mapped[str] = mapped_column(
+        String(255), nullable=False,
+        comment="Name as reported by the platform",
+    )
+    player_position: Mapped[str] = mapped_column(
+        String(50), nullable=False, comment="Normalised position code"
+    )
+    nfl_team: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True, comment="NFL team as reported by platform"
+    )
+    roster_position: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="Lineup slot: QB, RB, BN, FLEX, IR …"
+    )
+    external_player_id: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="Player ID on the source platform"
+    )
+    matched: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="True when player_id was successfully resolved",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_fantasy_rosters_team", "team_id"),
+        Index("ix_fantasy_rosters_player", "player_id"),
+        UniqueConstraint(
+            "team_id", "player_name", "player_position",
+            name="uq_fantasy_roster_team_player",
+        ),
+    )
