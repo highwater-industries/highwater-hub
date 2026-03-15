@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import StatCard from '$lib/components/StatCard.svelte';
+	import PlayerSeasonChart from '$lib/components/PlayerSeasonChart.svelte';
 	import { getPlayerSummary, type PlayerSummary, type SeasonTotals, type PlayerStat, type FantasyRank } from '$lib/api';
 
 	let summary: PlayerSummary | null = $state(null);
@@ -162,14 +165,14 @@
 </script>
 
 {#if loading}
-	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+	<div class="card bg-base-100 shadow-sm p-8 text-center">
 		<span class="loading loading-dots loading-md text-primary"></span>
-		<p class="text-sm opacity-60 mt-2">Loading player profile...</p>
+		<p class="text-sm text-base-content/60 mt-2">Loading player profile...</p>
 	</div>
 {:else if error}
-	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+	<div class="card bg-base-100 shadow-sm p-8 text-center">
 		<p class="text-error font-bold">Error</p>
-		<p class="text-sm opacity-60 mt-1">{error}</p>
+		<p class="text-sm text-base-content/60 mt-1">{error}</p>
 		<a href="/players" class="btn btn-sm btn-ghost mt-4">← Back to Players</a>
 	</div>
 {:else if summary}
@@ -177,6 +180,18 @@
 	{@const pos = p.player_position}
 	{@const seasonCols = positionStatKeys(pos)}
 	{@const gameCols = gameStatKeys(pos)}
+
+	<PageHeader title={p.player_name} breadcrumbs={[{ label: 'NFL' }, { label: 'Players', href: '/players' }, { label: p.player_name }]}>
+		{#snippet actions()}
+			{#if meta('status')}
+				{@const status = String(meta('status'))}
+				<span class="badge {status === 'ACT' ? 'badge-success' : 'badge-ghost'}">{status}</span>
+			{/if}
+			{#if p.source}
+				<span class="badge badge-ghost badge-sm">{p.source}</span>
+			{/if}
+		{/snippet}
+	</PageHeader>
 
 	<!-- PLAYER HEADER -->
 	<div class="flex flex-col md:flex-row gap-4 md:gap-6 mb-6">
@@ -196,7 +211,7 @@
 				</div>
 			{/if}
 			<div>
-				<h1 class="text-2xl md:text-3xl font-bold text-primary tracking-wide">{p.player_name}</h1>
+				<h2 class="text-xl md:text-2xl font-bold tracking-wide">{p.player_name}</h2>
 				<div class="flex flex-wrap items-center gap-2 mt-1 text-sm opacity-70">
 					{#if meta('jersey_number')}
 						<span class="font-bold text-accent">#{meta('jersey_number')}</span>
@@ -211,7 +226,7 @@
 					{/if}
 				</div>
 				<!-- Mobile: compact meta row -->
-				<div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs opacity-50">
+				<div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-base-content/50">
 					{#if meta('height')}
 						<span>{fmtHeight(meta('height'))}</span>
 					{/if}
@@ -230,22 +245,15 @@
 
 		<!-- Status badges — desktop right side -->
 		<div class="hidden md:flex md:ml-auto md:items-start gap-2 flex-wrap">
-			{#if meta('status')}
-				{@const status = String(meta('status'))}
-				<span class="badge {status === 'ACT' ? 'badge-success' : 'badge-ghost'}">{status}</span>
-			{/if}
 			{#if meta('birth_date')}
 				<span class="badge badge-ghost badge-sm">Born: {meta('birth_date')}</span>
-			{/if}
-			{#if p.source}
-				<span class="badge badge-ghost badge-sm">{p.source}</span>
 			{/if}
 		</div>
 	</div>
 
 	<!-- PAGE-WIDE FILTER BAR -->
-	<div class="flex flex-wrap gap-2 mb-6 items-center bg-base-200 rounded-lg px-4 py-2 border border-base-300">
-		<span class="text-xs font-bold opacity-50 uppercase tracking-wider mr-1">Filter:</span>
+	<div class="flex flex-wrap gap-2 mb-6 items-center card bg-base-100 shadow-sm px-4 py-2">
+		<span class="text-xs font-medium text-base-content/50 uppercase tracking-wider mr-1">Filter:</span>
 		<select class="select select-bordered select-sm" bind:value={seasonTypeFilter}>
 			<option value="total">Total</option>
 			<option value="REG">Regular Season</option>
@@ -254,34 +262,35 @@
 		</select>
 		{#if seasonTypeFilter !== 'total'}
 			<button class="btn btn-ghost btn-sm" onclick={() => seasonTypeFilter = 'total'}>Reset</button>
-			<span class="text-xs opacity-50">Showing {seasonTypeFilter === 'ALL' ? 'full breakdown' : seasonTypeFilter + ' only'}</span>
+			<span class="text-xs text-base-content/50">Showing {seasonTypeFilter === 'ALL' ? 'full breakdown' : seasonTypeFilter + ' only'}</span>
 		{/if}
 	</div>
 
 	<!-- CAREER TOTALS — stat cards row -->
 	{#if filteredCareer && filteredCareer.games_played > 0}
 		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// CAREER TOTALS{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
-			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-3">
-				<div class="card bg-base-200 border border-base-300 p-3 text-center">
-					<div class="text-xs opacity-50 uppercase tracking-wider">Games</div>
-					<div class="text-xl font-bold text-accent">{fmtNum(filteredCareer?.games_played)}</div>
-				</div>
+			<h2 class="text-base font-semibold mb-3">Career Totals{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
+			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+				<StatCard label="Games" value={filteredCareer?.games_played ?? 0} icon="lucide--hash" />
 				{#each seasonCols.slice(0, 7) as col}
-					<div class="card bg-base-200 border border-base-300 p-3 text-center">
-						<div class="text-xs opacity-50 uppercase tracking-wider">{col.label}</div>
-						<div class="text-xl font-bold text-accent">{fmtNum(filteredCareer?.[col.key] as number)}</div>
-					</div>
+					<StatCard label={col.label} value={filteredCareer?.[col.key] as number ?? 0} />
 				{/each}
 			</div>
+		</div>
+	{/if}
+
+	<!-- SEASON STATS CHART -->
+	{#if (summary.seasons ?? []).length >= 2}
+		<div class="mb-6">
+			<PlayerSeasonChart seasons={summary.seasons} position={pos} />
 		</div>
 	{/if}
 
 	<!-- SEASON-BY-SEASON TABLE -->
 	{#if filteredSeasons.length > 0}
 		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// SEASON BY SEASON{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
+			<h2 class="text-base font-semibold mb-3">Season by Season{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
+			<div class="card bg-base-100 shadow-sm overflow-hidden">
 				<div class="table-scroll-wrap">
 					<table class="table table-zebra table-pin-rows table-sm table-responsive">
 						<thead>
@@ -316,8 +325,8 @@
 	<!-- RECENT GAME LOG -->
 	{#if filteredGames.length > 0}
 		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// RECENT GAMES{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
+			<h2 class="text-base font-semibold mb-3">Recent Games{seasonTypeFilter !== 'total' ? ` (${seasonTypeFilter})` : ''}</h2>
+			<div class="card bg-base-100 shadow-sm overflow-hidden">
 				<div class="table-scroll-wrap">
 					<table class="table table-zebra table-pin-rows table-sm table-responsive">
 						<thead>
@@ -344,50 +353,7 @@
 								</tr>
 							{:else}
 								<tr>
-									<td colspan="{gameCols.length + 3}" class="text-center opacity-50 py-8">No game data</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</div>
-		</div>
-	{/if}
-
-	<!-- FANTASY RANKINGS -->
-	{#if (summary.rankings ?? []).length > 0}
-		<div class="mb-6">
-			<h2 class="text-lg font-bold text-primary tracking-wide mb-3">// FANTASY RANKINGS</h2>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
-				<div class="table-scroll-wrap">
-					<table class="table table-zebra table-pin-rows table-sm table-responsive">
-						<thead>
-							<tr>
-								<th>Type</th>
-								<th>Szn</th>
-								<th>Wk</th>
-								<th class="text-right">Rank</th>
-								<th class="text-right">ECR</th>
-								<th class="text-right">Best</th>
-								<th class="text-right">Worst</th>
-								<th class="text-right">Avg</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each summary.rankings as r}
-								<tr class="hover">
-									<td><span class="badge badge-ghost badge-sm">{r.rank_type ?? '—'}</span></td>
-									<td>{r.season ?? '—'}</td>
-									<td>{r.week ?? '—'}</td>
-									<td class="text-right font-bold text-accent">{fmtNum(r.rank)}</td>
-									<td class="text-right">{fmtDec(r.ecr)}</td>
-									<td class="text-right">{fmtNum(r.best)}</td>
-									<td class="text-right">{fmtNum(r.worst)}</td>
-									<td class="text-right">{fmtDec(r.avg)}</td>
-								</tr>
-							{:else}
-								<tr>
-									<td colspan="8" class="text-center opacity-50 py-8">No ranking data</td>
+									<td colspan="{gameCols.length + 3}" class="text-center text-base-content/50 py-8">No game data</td>
 								</tr>
 							{/each}
 						</tbody>

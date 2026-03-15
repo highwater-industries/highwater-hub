@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { listGames, type GameData, type GameFilter } from '$lib/api';
 	import { NFL_TEAMS, SEASONS, NFL_WEEKS } from '$lib/constants';
 
@@ -94,10 +95,11 @@
 	onMount(loadGames);
 </script>
 
-<div class="flex justify-between items-center mb-4">
-	<h1 class="text-2xl font-bold text-primary tracking-wide">// GAMES</h1>
-	<span class="text-sm opacity-60">{total.toLocaleString()} games</span>
-</div>
+<PageHeader title="Games" breadcrumbs={[{ label: 'NFL', href: '/games' }, { label: 'Games' }]}>
+	{#snippet actions()}
+		<span class="text-sm text-base-content/60">{total.toLocaleString()} games</span>
+	{/snippet}
+</PageHeader>
 
 <div class="flex flex-wrap gap-2 mb-4 items-center">
 	<select class="select select-bordered select-sm" bind:value={season} onchange={applyFilters}>
@@ -123,12 +125,12 @@
 </div>
 
 {#if loading}
-	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+	<div class="card bg-base-100 shadow-sm p-8 text-center">
 		<span class="loading loading-dots loading-md text-primary"></span>
-		<p class="text-sm opacity-60 mt-2">Loading schedule...</p>
+		<p class="text-sm text-base-content/60 mt-2">Loading schedule...</p>
 	</div>
 {:else}
-	<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+	<div class="card bg-base-100 shadow-sm overflow-hidden" class:table-fetching={fetching}>
 		<div class="table-scroll-wrap">
 			<table class="table table-zebra table-pin-rows table-responsive">
 				<thead>
@@ -161,7 +163,7 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="8" class="text-center opacity-50 py-8">No games found</td>
+							<td colspan="8" class="text-center text-base-content/50 py-8">No games found</td>
 						</tr>
 					{/each}
 				</tbody>

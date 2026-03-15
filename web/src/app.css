@@ -1,11 +1,9 @@
 /* ══════════════════════════════════════════
-   HIGHWATER HUB — daisyUI Corporate
+   HIGHWATER HUB — Nexus + daisyUI
    ══════════════════════════════════════════ */
 
-@import "tailwindcss";
-@plugin "daisyui" {
-	themes: corporate --default;
-}
+/* Nexus theme & style system */
+@import "$lib/styles/app.css";
 
 /* ── Table fetch dimming ── */
 .table-fetching {
@@ -90,12 +88,6 @@ th.sortable:hover {
 		white-space: nowrap;
 	}
 }
-
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: oklch(var(--color-base-100)); }
-::-webkit-scrollbar-thumb { background: oklch(var(--color-base-300)); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(var(--color-neutral)); }
 
 /* ── Prevent mobile zoom on input focus (iOS) ── */
 @media (max-width: 767px) {

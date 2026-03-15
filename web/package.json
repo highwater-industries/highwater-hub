@@ -23,5 +23,14 @@
 		"tailwindcss": "^4.2.1",
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1"
+	},
+	"dependencies": {
+		"@iconify-json/hugeicons": "^1.2.24",
+		"@iconify-json/lucide": "^1.2.98",
+		"@iconify-json/ri": "^1.2.10",
+		"@iconify/tailwind4": "^1.2.3",
+		"apexcharts": "^5.10.4",
+		"simplebar": "^6.3.3",
+		"tailwindcss-motion": "^1.1.1"
 	}
 }

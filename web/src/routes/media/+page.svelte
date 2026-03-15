@@ -1,4 +1,6 @@
 <script lang="ts">
+	import PageHeader from '$lib/components/PageHeader.svelte';
+
 	interface Service {
 		name: string;
 		icon: string;
@@ -28,34 +30,32 @@
 	}
 </script>
 
-<div class="flex justify-between items-center mb-6">
-	<h1 class="text-xl md:text-2xl font-bold text-primary tracking-wide">// MEDIA & INFRA</h1>
-</div>
+<PageHeader title="Media & Infrastructure" breadcrumbs={[{ label: 'System' }, { label: 'Media' }]} />
 
-<h4 class="text-sm font-bold opacity-50 mb-2 tracking-wide">MEDIA STACK</h4>
+<h4 class="text-sm font-medium text-base-content/50 mb-2 tracking-wide">MEDIA STACK</h4>
 <div class="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 mb-6">
 	{#each services.filter(s => s.category === 'media') as svc}
 		<a href={serviceUrl(svc.port)} target="_blank" rel="noopener"
-			class="card bg-base-200 border-2 border-base-300 hover:shadow-lg hover:-translate-y-0.5 transition-all no-underline">
+			class="card bg-base-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all no-underline">
 			<div class="card-body items-center text-center p-4 gap-1">
 				<span class="text-2xl">{svc.icon}</span>
 				<span class="font-bold text-sm tracking-wide" style="color: {svc.color}">{svc.name}</span>
-				<span class="text-xs opacity-60">{svc.description}</span>
+				<span class="text-xs text-base-content/60">{svc.description}</span>
 				<span class="text-xs opacity-30">:{svc.port}</span>
 			</div>
 		</a>
 	{/each}
 </div>
 
-<h4 class="text-sm font-bold opacity-50 mb-2 tracking-wide">INFRASTRUCTURE</h4>
+<h4 class="text-sm font-medium text-base-content/50 mb-2 tracking-wide">INFRASTRUCTURE</h4>
 <div class="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
 	{#each services.filter(s => s.category === 'infra') as svc}
 		<a href={serviceUrl(svc.port)} target="_blank" rel="noopener"
-			class="card bg-base-200 border-2 border-base-300 hover:shadow-lg hover:-translate-y-0.5 transition-all no-underline">
+			class="card bg-base-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all no-underline">
 			<div class="card-body items-center text-center p-4 gap-1">
 				<span class="text-2xl">{svc.icon}</span>
 				<span class="font-bold text-sm tracking-wide" style="color: {svc.color}">{svc.name}</span>
-				<span class="text-xs opacity-60">{svc.description}</span>
+				<span class="text-xs text-base-content/60">{svc.description}</span>
 				<span class="text-xs opacity-30">:{svc.port}</span>
 			</div>
 		</a>

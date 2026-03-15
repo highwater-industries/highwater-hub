@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import {
 		getWorkout,
 		completeWorkout,
@@ -276,32 +277,22 @@
 </script>
 
 {#if loading}
-	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+	<div class="card bg-base-100 shadow-sm p-8 text-center">
 		<span class="loading loading-dots loading-md text-primary"></span>
 	</div>
 {:else if error}
-	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+	<div class="card bg-base-100 shadow-sm p-8 text-center">
 		<p class="text-error font-bold">{error}</p>
 		<a href="/fitness" class="btn btn-sm btn-ghost mt-4">← Back</a>
 	</div>
 {:else if workout}
 
 	<!-- Header -->
-	<div class="flex justify-between items-center mb-4">
-		<div>
-			<a href="/fitness" class="text-sm opacity-50 hover:opacity-100">← Back</a>
-			<h1 class="text-xl md:text-2xl font-bold text-primary tracking-wide">
-				// WORKOUT
-				{#if workout.is_deload}<span class="badge badge-outline badge-sm text-warning ml-2">Deload</span>{/if}
-			</h1>
-			<p class="text-xs md:text-sm opacity-60">
-				{formatDate(workout.started_at)}
-				{#if !workout.completed_at}
-					&middot; {elapsed()} elapsed
-				{/if}
-			</p>
-		</div>
-		<div class="flex flex-col items-end gap-1">
+	<PageHeader title="Workout" breadcrumbs={[{ label: 'Fitness', href: '/fitness' }, { label: 'Workout' }]}>
+		{#snippet actions()}
+			{#if workout.is_deload}
+				<span class="badge badge-outline badge-sm text-warning">Deload</span>
+			{/if}
 			{#if !workout.completed_at}
 				<button class="btn btn-success btn-sm" onclick={() => (showComplete = true)}>
 					✓ Finish
@@ -317,23 +308,30 @@
 							workout = { ...workout, is_deload: e.currentTarget.checked };
 						}}
 					/>
-					<span class="text-xs opacity-50">Deload</span>
+					<span class="text-xs text-base-content/50">Deload</span>
 				</label>
 			{:else}
 				<span class="badge badge-success">Completed</span>
 			{/if}
-		</div>
-	</div>
+		{/snippet}
+	</PageHeader>
+
+	<p class="text-sm text-base-content/60 -mt-4 mb-4">
+		{formatDate(workout.started_at)}
+		{#if !workout.completed_at}
+			&middot; {elapsed()} elapsed
+		{/if}
+	</p>
 
 	<!-- Exercises -->
 	{#each workout.exercises as we, idx (we.id)}
-		<div class="card bg-base-200 border-2 border-base-300 mb-4" data-exercise-card={we.id}>
+		<div class="card bg-base-100 shadow-sm mb-4" data-exercise-card={we.id}>
 			<div class="card-body p-4">
 				<!-- Exercise Header -->
 				<div class="flex justify-between items-start">
 					<div>
 						<h3 class="font-bold text-primary">{we.exercise_name}</h3>
-						<span class="text-xs opacity-50">{we.exercise_category}</span>
+						<span class="text-xs text-base-content/50">{we.exercise_category}</span>
 					</div>
 					<div class="flex gap-1">
 						<button
@@ -367,14 +365,14 @@
 					{@const isCardio = we.exercise_category === 'cardio'}
 					<div class="bg-base-300 rounded-md p-3 mt-2 text-sm">
 						<div class="flex items-center justify-between mb-2">
-							<h4 class="font-bold text-xs opacity-60 tracking-wide">RECENT HISTORY</h4>
+							<h4 class="font-bold text-xs text-base-content/60 tracking-wide">RECENT HISTORY</h4>
 							<a href="/fitness/progress" class="link link-primary text-xs">Full Progress →</a>
 						</div>
 						{#if (historyMap[we.exercise_id] ?? []).length > 0}
 						<div class="overflow-x-auto">
 							<table class="table table-xs table-zebra">
 								<thead>
-									<tr class="text-xs opacity-60">
+									<tr class="text-xs text-base-content/60">
 										<th>Date</th>
 										{#if isCardio}
 											<th class="text-right">Duration</th>
@@ -439,7 +437,7 @@
 					<!-- Cardio: single row with duration/distance/speed/incline -->
 					{#each we.sets as s, i (s.id)}
 						<div class="grid grid-cols-2 gap-2 mt-2 items-center" data-set-id={s.id}>
-							<label class="text-xs opacity-50">
+							<label class="text-xs text-base-content/50">
 								Duration (min)
 								<input
 									type="number"
@@ -450,7 +448,7 @@
 									disabled={!!workout.completed_at}
 								/>
 							</label>
-							<label class="text-xs opacity-50">
+							<label class="text-xs text-base-content/50">
 								Distance (mi)
 								<input
 									type="number"
@@ -462,7 +460,7 @@
 									disabled={!!workout.completed_at}
 								/>
 							</label>
-							<label class="text-xs opacity-50">
+							<label class="text-xs text-base-content/50">
 								Top Speed
 								<input
 									type="number"
@@ -474,7 +472,7 @@
 									disabled={!!workout.completed_at}
 								/>
 							</label>
-							<label class="text-xs opacity-50">
+							<label class="text-xs text-base-content/50">
 								Incline %
 								<input
 									type="number"
@@ -499,7 +497,7 @@
 				{:else}
 					<!-- Strength / Bodyweight: set table -->
 					{#if we.exercise_category === 'bodyweight' && userBodyweight}
-						<div class="text-xs opacity-60 mt-2 mb-1">
+						<div class="text-xs text-base-content/60 mt-2 mb-1">
 							Bodyweight: {userBodyweight} lb — weight entered below is <em>added</em> weight
 						</div>
 					{/if}
@@ -560,7 +558,7 @@
 
 				<!-- Exercise metadata: notes, difficulty, progression -->
 				<div class="flex flex-col md:flex-row flex-wrap gap-3 mt-3 pt-3 border-t border-base-300">
-					<label class="text-xs opacity-50 flex-1 min-w-0">
+					<label class="text-xs text-base-content/50 flex-1 min-w-0">
 						Notes
 						<input
 							type="text"
@@ -571,7 +569,7 @@
 							disabled={!!workout.completed_at}
 						/>
 					</label>
-					<label class="text-xs opacity-50">
+					<label class="text-xs text-base-content/50">
 						Difficulty
 						<select
 							class="select select-bordered select-sm mt-0.5"
@@ -585,7 +583,7 @@
 							{/each}
 						</select>
 					</label>
-					<label class="text-xs opacity-50 flex items-end gap-1 py-1">
+					<label class="text-xs text-base-content/50 flex items-end gap-1 py-1">
 						<input
 							type="checkbox"
 							class="checkbox checkbox-sm checkbox-success"
@@ -657,8 +655,8 @@
 
 	<!-- Workout Notes (after completion) -->
 	{#if workout.completed_at && workout.notes}
-		<div class="card bg-base-200 border border-base-300 p-4 mt-2">
-			<h4 class="text-xs font-bold opacity-50 mb-1">SESSION NOTES</h4>
+		<div class="card bg-base-100 shadow-sm p-4 mt-2">
+			<h4 class="text-xs font-medium text-base-content/50 mb-1">SESSION NOTES</h4>
 			<p class="text-sm">{workout.notes}</p>
 		</div>
 	{/if}
@@ -669,7 +667,7 @@
 			<div class="card bg-base-100 shadow-xl border-2 border-base-300 w-full max-w-md">
 				<div class="card-body">
 					<h3 class="card-title text-primary">Finish Workout?</h3>
-					<p class="text-sm opacity-60">
+					<p class="text-sm text-base-content/60">
 						{workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''},
 						{workout.exercises.reduce((sum, e) => sum + e.sets.length, 0)} total sets
 					</p>

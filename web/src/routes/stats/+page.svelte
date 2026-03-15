@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { listStats, getLeaders, type PlayerStat, type StatFilter } from '$lib/api';
 	import { NFL_TEAMS, POSITIONS, SEASONS, NFL_WEEKS, LEADER_STATS, STAT_TYPES, SOURCES } from '$lib/constants';
 
@@ -159,10 +160,9 @@ leaderPosition || undefined,
 	onMount(loadStats);
 </script>
 
-<div class="flex justify-between items-center mb-4">
-	<h1 class="text-2xl font-bold text-primary tracking-wide">// PLAYER STATS</h1>
-	<div class="flex gap-2 items-center">
-		<span class="text-sm opacity-60">{total.toLocaleString()} {groupBy === 'season' ? 'season totals' : 'stat lines'}</span>
+<PageHeader title="Player Stats" breadcrumbs={[{ label: 'NFL', href: '/stats' }, { label: 'Stats' }]}>
+	{#snippet actions()}
+		<span class="text-sm text-base-content/60">{total.toLocaleString()} {groupBy === 'season' ? 'season totals' : 'stat lines'}</span>
 		<button
 			class="btn btn-sm"
 			class:btn-accent={groupBy === 'season'}
@@ -177,8 +177,8 @@ leaderPosition || undefined,
 		>
 			{showLeaders ? '← Browse' : '★ Leaders'}
 		</button>
-	</div>
-</div>
+	{/snippet}
+</PageHeader>
 
 {#if showLeaders}
 	<!-- Leaders Panel -->
@@ -208,12 +208,12 @@ leaderPosition || undefined,
 	</div>
 
 	{#if loadingLeaders}
-		<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+		<div class="card bg-base-100 shadow-sm p-8 text-center">
 			<span class="loading loading-dots loading-md text-primary"></span>
-			<p class="text-sm opacity-60 mt-2">Ranking leaders...</p>
+			<p class="text-sm text-base-content/60 mt-2">Ranking leaders...</p>
 		</div>
 	{:else}
-		<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
+		<div class="card bg-base-100 shadow-sm overflow-hidden">
 			<div class="table-scroll-wrap">
 				<table class="table table-zebra table-pin-rows table-responsive">
 					<thead>
@@ -238,7 +238,7 @@ leaderPosition || undefined,
 							</tr>
 						{:else}
 							<tr>
-								<td colspan="5" class="text-center opacity-50 py-8">No leader data</td>
+								<td colspan="5" class="text-center text-base-content/50 py-8">No leader data</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -303,12 +303,12 @@ leaderPosition || undefined,
 	</div>
 
 	{#if loading}
-		<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+		<div class="card bg-base-100 shadow-sm p-8 text-center">
 			<span class="loading loading-dots loading-md text-primary"></span>
-			<p class="text-sm opacity-60 mt-2">Scanning stats...</p>
+			<p class="text-sm text-base-content/60 mt-2">Scanning stats...</p>
 		</div>
 	{:else}
-		<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+		<div class="card bg-base-100 shadow-sm overflow-hidden" class:table-fetching={fetching}>
 			<div class="table-scroll-wrap">
 				<table class="table table-zebra table-pin-rows table-sm table-responsive">
 					<thead>
@@ -349,7 +349,7 @@ leaderPosition || undefined,
 							</tr>
 						{:else}
 							<tr>
-								<td colspan="14" class="text-center opacity-50 py-8">No stat records found</td>
+								<td colspan="14" class="text-center text-base-content/50 py-8">No stat records found</td>
 							</tr>
 						{/each}
 					</tbody>

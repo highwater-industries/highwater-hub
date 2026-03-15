@@ -4,4 +4,4 @@
 	onMount(() => goto('/data', { replaceState: true }));
 </script>
 
-<p class="text-center opacity-50 mt-8">Redirecting to Data Management...</p>
+<p class="text-center text-base-content/50 mt-8">Redirecting to Data Management...</p>

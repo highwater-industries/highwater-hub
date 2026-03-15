@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { listRankings, type FantasyRank, type RankingFilter } from '$lib/api';
 	import { NFL_TEAMS, POSITIONS, RANK_TYPES, SEASONS, NFL_WEEKS, SOURCES } from '$lib/constants';
 
@@ -111,10 +112,11 @@
 	onMount(loadRankings);
 </script>
 
-<div class="flex justify-between items-center mb-4">
-	<h1 class="text-2xl font-bold text-primary tracking-wide">// FANTASY RANKINGS</h1>
-	<span class="text-sm opacity-60">{total.toLocaleString()} rankings</span>
-</div>
+<PageHeader title="Fantasy Rankings" breadcrumbs={[{ label: 'NFL', href: '/rankings' }, { label: 'Rankings' }]}>
+	{#snippet actions()}
+		<span class="text-sm text-base-content/60">{total.toLocaleString()} rankings</span>
+	{/snippet}
+</PageHeader>
 
 <div class="flex flex-wrap gap-2 mb-4 items-center">
 	<input
@@ -165,12 +167,12 @@
 </div>
 
 {#if loading}
-	<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+	<div class="card bg-base-100 shadow-sm p-8 text-center">
 		<span class="loading loading-dots loading-md text-primary"></span>
-		<p class="text-sm opacity-60 mt-2">Loading rankings...</p>
+		<p class="text-sm text-base-content/60 mt-2">Loading rankings...</p>
 	</div>
 {:else}
-	<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden" class:table-fetching={fetching}>
+	<div class="card bg-base-100 shadow-sm overflow-hidden" class:table-fetching={fetching}>
 		<div class="table-scroll-wrap">
 			<table class="table table-zebra table-pin-rows table-responsive">
 				<thead>
@@ -203,7 +205,7 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="10" class="text-center opacity-50 py-8">No ranking data</td>
+							<td colspan="10" class="text-center text-base-content/50 py-8">No ranking data</td>
 						</tr>
 					{/each}
 				</tbody>

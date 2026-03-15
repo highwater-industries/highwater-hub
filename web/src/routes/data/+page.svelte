@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import StatCard from '$lib/components/StatCard.svelte';
 	import {
 		getInventory, runAudit, listJobs, listPlayers, startImport, batchImport, fullImport,
 		getJobSummary, cleanupStuckJobs, abortJob, abortAllJobs,
@@ -126,6 +128,10 @@
 	const limit = 50;
 	let expandedErrors: Set<number> = $state(new Set());
 
+	// ── Lazy tab loading ──
+	let inventoryLoaded = $state(false);
+	let historyLoaded = $state(false);
+
 	const COLLECTOR_LABELS: Record<string, string> = {
 		nflreadpy: 'Rosters',
 		nflreadpy_stats: 'Stats',
@@ -134,8 +140,37 @@
 	};
 
 	// ── Inventory logic ──
+	const CACHE_KEY = 'data_inventory_cache';
+
+	function getCachedInventory(): InventoryResponse | null {
+		try {
+			const raw = sessionStorage.getItem(CACHE_KEY);
+			if (!raw) return null;
+			const { data, ts } = JSON.parse(raw);
+			// Expire after 5 minutes
+			if (Date.now() - ts > 5 * 60 * 1000) return null;
+			return data;
+		} catch { return null; }
+	}
+
+	function setCachedInventory(data: InventoryResponse) {
+		try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
+	}
+
 	async function loadInventory() {
-		inventoryLoading = true;
+		// Show cached data instantly (stale-while-revalidate)
+		if (!inventory && !hasAnyFilter) {
+			const cached = getCachedInventory();
+			if (cached) {
+				inventory = cached;
+				unfilteredInventory = cached;
+				inventoryLoaded = true;
+				// Still refresh in background, but don't show loading state
+				inventoryLoading = false;
+			}
+		}
+
+		if (!inventory) inventoryLoading = true;
 		try {
 			const f: InventoryFilter = {};
 			if (filterSource) f.source = filterSource;
@@ -144,10 +179,12 @@
 			if (filterSeasonType) f.season_type = filterSeasonType;
 			if (filterRankType) f.rank_type = filterRankType;
 			inventory = await getInventory(f);
-			// Load unfiltered inventory once for dropdown options
+			// Cache unfiltered results
+			if (!hasAnyFilter) setCachedInventory(inventory);
 			if (!unfilteredInventory) {
 				unfilteredInventory = hasAnyFilter ? await getInventory() : inventory;
 			}
+			inventoryLoaded = true;
 		} catch (e) {
 			console.error('Failed to load inventory', e);
 		} finally {
@@ -193,6 +230,7 @@
 	async function loadHistory() {
 		historyLoading = true;
 		await refreshJobs();
+		historyLoaded = true;
 		historyLoading = false;
 	}
 
@@ -363,15 +401,31 @@
 	function prevPage() { if (offset > 0) { offset = Math.max(0, offset - limit); loadHistory(); } }
 
 	onMount(() => {
+		// Fire everything in parallel — inventory shows cached data instantly
 		loadInventory();
-		loadHistory();
+		getJobSummary().then(s => {
+			summary = s;
+			hasActiveJobs = s.pending > 0 || s.running > 0;
+			if (hasActiveJobs) startPolling();
+		}).catch(() => {});
 	});
 	onDestroy(stopPolling);
+
+	// Lazy-load data when tabs change
+	$effect(() => {
+		if (activeTab === 'inventory' && !inventoryLoaded) {
+			loadInventory();
+		} else if (activeTab === 'history' && !historyLoaded) {
+			loadHistory();
+		} else if (activeTab === 'import' && !historyLoaded) {
+			// Import tab shows active jobs indicator, needs summary
+			refreshJobs();
+		}
+	});
 </script>
 
-<div class="flex justify-between items-center mb-4">
-	<h1 class="text-2xl font-bold text-primary tracking-wide">// DATA MANAGEMENT</h1>
-	<div class="flex gap-3 items-center">
+<PageHeader title="Data Management" breadcrumbs={[{ label: 'System' }, { label: 'Data' }]}>
+	{#snippet actions()}
 		{#if hasActiveJobs}
 			<span class="loading loading-ring loading-xs text-warning"></span>
 			<span class="text-xs text-warning font-semibold">
@@ -381,13 +435,13 @@
 		{#if importMessage}
 			<span class="text-xs text-success font-semibold">{importMessage}</span>
 		{/if}
-	</div>
-</div>
+	{/snippet}
+</PageHeader>
 
 <!-- Filter Bar -->
-<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2.5 mb-4">
+<div class="card bg-base-100 shadow-sm px-4 py-2.5 mb-4">
 	<div class="flex flex-wrap items-center gap-2">
-		<span class="text-xs font-bold opacity-50">FILTERS</span>
+		<span class="text-xs font-medium text-base-content/50">FILTERS</span>
 
 		<select class="select select-bordered select-xs w-28" bind:value={filterSource} onchange={applyFilters}>
 			<option value="">All Sources</option>
@@ -451,34 +505,41 @@
 
 <!-- ═══════════════════════ INVENTORY TAB ═══════════════════════ -->
 {#if activeTab === 'inventory'}
-	{#if inventoryLoading}
-		<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
-			<span class="loading loading-dots loading-md text-primary"></span>
-			<p class="text-sm opacity-60 mt-2">Scanning database...</p>
+	{#if inventoryLoading && !inventory}
+		<!-- Skeleton placeholder — renders instantly -->
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+			{#each [1,2,3,4] as _}
+				<div class="card bg-base-100 shadow-sm p-4">
+					<div class="skeleton h-4 w-16 mb-2"></div>
+					<div class="skeleton h-7 w-24"></div>
+				</div>
+			{/each}
 		</div>
+		<div class="card bg-base-100 shadow-sm p-4 mb-5">
+			<div class="skeleton h-4 w-32 mb-3"></div>
+			<div class="skeleton h-8 w-full"></div>
+		</div>
+		{#each [1,2] as _}
+			<div class="skeleton h-4 w-28 mb-2"></div>
+			<div class="card bg-base-100 shadow-sm overflow-hidden mb-5">
+				<div class="p-3 space-y-2">
+					{#each [1,2,3] as __}
+						<div class="skeleton h-5 w-full"></div>
+					{/each}
+				</div>
+			</div>
+		{/each}
 	{:else if inventory}
 		<!-- Grand Totals -->
-		<div class="grid grid-cols-4 gap-3 mb-5">
-			<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-				<div class="text-xs font-semibold opacity-50 mb-0.5">Players</div>
-				<div class="text-xl font-bold text-primary">{inventory.totals.players.toLocaleString()}</div>
-			</div>
-			<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-				<div class="text-xs font-semibold opacity-50 mb-0.5">Stat Rows</div>
-				<div class="text-xl font-bold text-info">{inventory.totals.stats.toLocaleString()}</div>
-			</div>
-			<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-				<div class="text-xs font-semibold opacity-50 mb-0.5">Games</div>
-				<div class="text-xl font-bold text-success">{inventory.totals.games.toLocaleString()}</div>
-			</div>
-			<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-				<div class="text-xs font-semibold opacity-50 mb-0.5">Rankings</div>
-				<div class="text-xl font-bold text-warning">{inventory.totals.rankings.toLocaleString()}</div>
-			</div>
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+			<StatCard label="Players" value={inventory.totals.players} icon="lucide--users" />
+			<StatCard label="Stat Rows" value={inventory.totals.stats} icon="lucide--bar-chart-3" />
+			<StatCard label="Games" value={inventory.totals.games} icon="lucide--trophy" />
+			<StatCard label="Rankings" value={inventory.totals.rankings} icon="lucide--star" />
 		</div>
 
 		<!-- Audit Section -->
-		<div class="card bg-base-200 shadow-md border border-base-300 mb-5 p-4">
+		<div class="card bg-base-100 shadow-sm mb-5 p-4">
 			<div class="flex items-center gap-3 mb-2">
 				<h3 class="font-bold text-sm">🔍 Data Audit</h3>
 				<select class="select select-bordered select-xs w-24" bind:value={auditSeason}>
@@ -509,7 +570,7 @@
 								</table>
 							</div>
 							{#if auditResult.duplicates.length > 20}
-								<div class="text-xs opacity-50 mt-1">...and {auditResult.duplicates.length - 20} more</div>
+								<div class="text-xs text-base-content/50 mt-1">...and {auditResult.duplicates.length - 20} more</div>
 							{/if}
 						{/if}
 					</div>
@@ -579,7 +640,7 @@
 		<!-- Players Inventory -->
 		{#if inventory.players.length > 0}
 			<h3 class="font-bold text-sm mb-2 opacity-70">PLAYERS</h3>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden mb-5">
+			<div class="card bg-base-100 shadow-sm overflow-hidden mb-5">
 				<table class="table table-zebra table-sm">
 					<thead>
 						<tr><th>Source</th><th>Rows</th><th>Players</th><th>Last Updated</th><th></th></tr>
@@ -590,7 +651,7 @@
 								<td class="font-mono text-sm">{row.source}</td>
 								<td>{row.rows.toLocaleString()}</td>
 								<td>{row.distinct_players.toLocaleString()}</td>
-								<td class="text-xs opacity-60">{timeAgo(row.last_updated)}</td>
+								<td class="text-xs text-base-content/60">{timeAgo(row.last_updated)}</td>
 								<td>
 									<button class="btn btn-ghost btn-xs" onclick={() => quickImport('nflreadpy', SEASONS[0])} disabled={importing} title="Re-import latest rosters">
 										↻
@@ -606,7 +667,7 @@
 		<!-- Stats Inventory -->
 		{#if inventory.stats.length > 0}
 			<h3 class="font-bold text-sm mb-2 opacity-70">PLAYER STATS</h3>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden mb-5">
+			<div class="card bg-base-100 shadow-sm overflow-hidden mb-5">
 				<table class="table table-zebra table-sm">
 					<thead>
 						<tr><th>Source</th><th>Season</th><th>Type</th><th>Szn Type</th><th>Rows</th><th>Players</th><th>Weeks</th><th>Last Updated</th><th></th></tr>
@@ -627,7 +688,7 @@
 										—
 									{/if}
 								</td>
-								<td class="text-xs opacity-60">{timeAgo(row.last_updated)}</td>
+								<td class="text-xs text-base-content/60">{timeAgo(row.last_updated)}</td>
 								<td>
 									<button class="btn btn-ghost btn-xs" onclick={() => quickImport('nflreadpy_stats', row.season ?? SEASONS[0])} disabled={importing} title="Re-import this season's stats">
 										↻
@@ -643,7 +704,7 @@
 		<!-- Games Inventory -->
 		{#if inventory.games.length > 0}
 			<h3 class="font-bold text-sm mb-2 opacity-70">GAMES / SCHEDULES</h3>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden mb-5">
+			<div class="card bg-base-100 shadow-sm overflow-hidden mb-5">
 				<table class="table table-zebra table-sm">
 					<thead>
 						<tr><th>Source</th><th>Season</th><th>Games</th><th>Weeks</th><th>Last Updated</th><th></th></tr>
@@ -661,7 +722,7 @@
 										—
 									{/if}
 								</td>
-								<td class="text-xs opacity-60">{timeAgo(row.last_updated)}</td>
+								<td class="text-xs text-base-content/60">{timeAgo(row.last_updated)}</td>
 								<td>
 									<button class="btn btn-ghost btn-xs" onclick={() => quickImport('nflreadpy_schedules', row.season ?? SEASONS[0])} disabled={importing} title="Re-import this season's schedule">
 										↻
@@ -677,7 +738,7 @@
 		<!-- Rankings Inventory -->
 		{#if inventory.rankings.length > 0}
 			<h3 class="font-bold text-sm mb-2 opacity-70">FANTASY RANKINGS</h3>
-			<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden mb-5">
+			<div class="card bg-base-100 shadow-sm overflow-hidden mb-5">
 				<table class="table table-zebra table-sm">
 					<thead>
 						<tr><th>Source</th><th>Season</th><th>Rank Type</th><th>Rows</th><th>Players</th><th>Last Updated</th><th></th></tr>
@@ -690,7 +751,7 @@
 								<td><span class="badge badge-sm badge-ghost">{row.rank_type ?? '—'}</span></td>
 								<td>{row.rows.toLocaleString()}</td>
 								<td>{row.distinct_players.toLocaleString()}</td>
-								<td class="text-xs opacity-60">{timeAgo(row.last_updated)}</td>
+								<td class="text-xs text-base-content/60">{timeAgo(row.last_updated)}</td>
 								<td>
 									<button class="btn btn-ghost btn-xs" onclick={() => quickImport('nflreadpy_ff_rankings', row.season ?? SEASONS[0])} disabled={importing} title="Re-import rankings">
 										↻
@@ -705,9 +766,9 @@
 
 		<!-- Empty DB -->
 		{#if inventory.totals.players === 0 && inventory.totals.stats === 0 && inventory.totals.games === 0 && inventory.totals.rankings === 0}
-			<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
+			<div class="card bg-base-100 shadow-sm p-8 text-center">
 				<p class="text-lg font-bold text-warning mb-2">Database is empty</p>
-				<p class="text-sm opacity-60">Switch to the Import tab to load data.</p>
+				<p class="text-sm text-base-content/60">Switch to the Import tab to load data.</p>
 			</div>
 		{/if}
 
@@ -718,7 +779,7 @@
 
 <!-- ═══════════════════════ IMPORT TAB ═══════════════════════ -->
 {:else if activeTab === 'import'}
-	<div class="card bg-base-200 shadow-md border border-base-300 mb-5">
+	<div class="card bg-base-100 shadow-sm mb-5">
 		<div class="card-body p-4 gap-0">
 			<!-- Import sub-tabs -->
 			<div role="tablist" class="tabs tabs-bordered mb-3">
@@ -744,7 +805,7 @@
 
 			<!-- Full Import -->
 			{:else if importTab === 'full'}
-				<p class="text-xs opacity-50 mb-2">All data (rosters, stats, schedules, rankings) — merge strategy, safe to re-run.</p>
+				<p class="text-xs text-base-content/50 mb-2">All data (rosters, stats, schedules, rankings) — merge strategy, safe to re-run.</p>
 				<div class="flex flex-wrap gap-2 items-center">
 					<span class="text-xs font-semibold opacity-50">From</span>
 					<select class="select select-bordered select-xs w-20" bind:value={fullFromSeason}>
@@ -811,7 +872,7 @@
 
 	<!-- Active jobs indicator -->
 	{#if hasActiveJobs}
-		<div class="card bg-base-200 shadow-md border border-warning/30 p-3 mb-4">
+		<div class="card bg-base-100 shadow-sm border border-warning/30 p-3 mb-4">
 			<div class="flex items-center gap-2">
 				<span class="loading loading-ring loading-xs text-warning"></span>
 				<span class="text-sm font-semibold">{summary.running} running · {summary.pending} queued</span>
@@ -841,36 +902,24 @@
 	{/if}
 
 	<!-- Queue Dashboard -->
-	<div class="grid grid-cols-5 gap-3 mb-5">
-		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-			<div class="text-xs font-semibold opacity-50 mb-0.5">Queued</div>
-			<div class="text-xl font-bold text-info">{summary.pending}</div>
-		</div>
-		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-			<div class="text-xs font-semibold opacity-50 mb-0.5">Running</div>
-			<div class="text-xl font-bold text-warning">{summary.running}</div>
-		</div>
-		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-			<div class="text-xs font-semibold opacity-50 mb-0.5">Completed</div>
-			<div class="text-xl font-bold text-success">{summary.completed}</div>
-		</div>
-		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-			<div class="text-xs font-semibold opacity-50 mb-0.5">Failed</div>
-			<div class="text-xl font-bold text-error">{summary.failed}</div>
-		</div>
-		<div class="bg-base-200 border border-base-300 rounded-lg px-4 py-2 text-center">
-			<div class="text-xs font-semibold opacity-50 mb-0.5">Players</div>
-			<div class="text-xl font-bold text-primary">{totalPlayers.toLocaleString()}</div>
-		</div>
+	<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+		<StatCard label="Queued" value={summary.pending} icon="lucide--clock" />
+		<StatCard label="Running" value={summary.running} icon="lucide--loader" />
+		<StatCard label="Completed" value={summary.completed} icon="lucide--check-circle" />
+		<StatCard label="Failed" value={summary.failed} icon="lucide--x-circle" />
+		<StatCard label="Players" value={totalPlayers} icon="lucide--users" />
 	</div>
 
 	{#if historyLoading}
-		<div class="card bg-base-200 shadow-md border border-base-300 p-8 text-center">
-			<span class="loading loading-dots loading-md text-primary"></span>
-			<p class="text-sm opacity-60 mt-2">Querying logs...</p>
+		<div class="card bg-base-100 shadow-sm overflow-hidden">
+			<div class="p-3 space-y-2">
+				{#each [1,2,3,4,5] as _}
+					<div class="skeleton h-6 w-full"></div>
+				{/each}
+			</div>
 		</div>
 	{:else}
-		<div class="card bg-base-100 shadow-md border border-base-300 overflow-hidden">
+		<div class="card bg-base-100 shadow-sm overflow-hidden">
 			<div class="table-scroll-wrap">
 				<table class="table table-zebra table-pin-rows table-sm table-responsive">
 					<thead>
@@ -892,7 +941,7 @@
 							{@const isFailed = job.status === 'failed'}
 							{@const hasProg = isActive && job.progress !== null && job.progress !== undefined}
 							<tr class="hover {isActive ? 'bg-warning/5' : ''} {isPending ? 'bg-info/5' : ''}">
-								<td class="font-mono text-xs opacity-60">#{job.id}</td>
+								<td class="font-mono text-xs text-base-content/60">#{job.id}</td>
 								<td>
 									<span class="font-semibold text-sm">{COLLECTOR_LABELS[job.collector_type] ?? job.collector_type}</span>
 								</td>
@@ -934,7 +983,7 @@
 									{/if}
 								</td>
 								<td class="text-sm">{formatDuration(job.started_at, job.finished_at)}</td>
-								<td class="text-xs opacity-60" title={new Date(job.started_at).toLocaleString()}>
+								<td class="text-xs text-base-content/60" title={new Date(job.started_at).toLocaleString()}>
 									{timeAgo(job.started_at)}
 								</td>
 							</tr>
@@ -953,7 +1002,7 @@
 							{/if}
 						{:else}
 							<tr>
-								<td colspan="8" class="text-center opacity-50 py-8">No jobs logged yet.</td>
+								<td colspan="8" class="text-center text-base-content/50 py-8">No jobs logged yet.</td>
 							</tr>
 						{/each}
 					</tbody>
