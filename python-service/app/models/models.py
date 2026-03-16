@@ -454,6 +454,30 @@ class FantasyTeam(Base):
     points_against: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     standing_rank: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     playoff_seed: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    logo_url: Mapped[Optional[str]] = mapped_column(
+        String(512), nullable=True, comment="Team logo/avatar URL"
+    )
+    streak_type: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True, comment="win or loss"
+    )
+    streak_value: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="Current streak length"
+    )
+    waiver_priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    number_of_moves: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    number_of_trades: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    clinched_playoffs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    draft_grade: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

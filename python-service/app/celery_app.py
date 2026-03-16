@@ -36,7 +36,7 @@ celery_app.conf.update(
     # Avoid prefetching many tasks — import jobs are heavy
     worker_prefetch_multiplier=1,
     # Auto-discover tasks in app.tasks
-    imports=["app.tasks.import_task"],
+    imports=["app.tasks.import_task", "app.tasks.fantasy_import_task"],
     # Task timeouts — soft raises SoftTimeLimitExceeded (graceful),
     # hard kills the worker process (last resort).
     # Override per-env with CELERY_TASK_SOFT_TIME_LIMIT / CELERY_TASK_TIME_LIMIT.

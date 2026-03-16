@@ -35,6 +35,7 @@ class FantasyImportRequest(BaseModel):
     )
     espn_swid: Optional[str] = Field(
         default=None,
+        alias="swid",
         description="ESPN SWID cookie (private ESPN leagues only).",
     )
     espn_s2: Optional[str] = Field(
@@ -43,6 +44,7 @@ class FantasyImportRequest(BaseModel):
     )
 
     model_config = {
+        "populate_by_name": True,
         "json_schema_extra": {
             "examples": [
                 {

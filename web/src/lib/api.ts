@@ -794,6 +794,14 @@ export interface FantasyTeam {
 	points_against: number;
 	standing_rank?: number;
 	playoff_seed?: number;
+	logo_url?: string;
+	streak_type?: string;
+	streak_value: number;
+	waiver_priority: number;
+	number_of_moves: number;
+	number_of_trades: number;
+	clinched_playoffs: boolean;
+	draft_grade?: string;
 	created_at: string;
 	updated_at: string;
 }

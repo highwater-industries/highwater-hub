@@ -16,20 +16,28 @@ type League struct {
 
 // Team represents a team within a fantasy league.
 type Team struct {
-	ID             int     `json:"id"`
-	LeagueID       int     `json:"league_id"`
-	ExternalTeamID *string `json:"external_team_id,omitempty"`
-	TeamName       string  `json:"team_name"`
-	OwnerName      *string `json:"owner_name,omitempty"`
-	Wins           int     `json:"wins"`
-	Losses         int     `json:"losses"`
-	Ties           int     `json:"ties"`
-	PointsFor      float64 `json:"points_for"`
-	PointsAgainst  float64 `json:"points_against"`
-	StandingRank   *int    `json:"standing_rank,omitempty"`
-	PlayoffSeed    *int    `json:"playoff_seed,omitempty"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
+	ID               int     `json:"id"`
+	LeagueID         int     `json:"league_id"`
+	ExternalTeamID   *string `json:"external_team_id,omitempty"`
+	TeamName         string  `json:"team_name"`
+	OwnerName        *string `json:"owner_name,omitempty"`
+	Wins             int     `json:"wins"`
+	Losses           int     `json:"losses"`
+	Ties             int     `json:"ties"`
+	PointsFor        float64 `json:"points_for"`
+	PointsAgainst    float64 `json:"points_against"`
+	StandingRank     *int    `json:"standing_rank,omitempty"`
+	PlayoffSeed      *int    `json:"playoff_seed,omitempty"`
+	LogoURL          *string `json:"logo_url,omitempty"`
+	StreakType       *string `json:"streak_type,omitempty"`
+	StreakValue      int     `json:"streak_value"`
+	WaiverPriority   int     `json:"waiver_priority"`
+	NumberOfMoves    int     `json:"number_of_moves"`
+	NumberOfTrades   int     `json:"number_of_trades"`
+	ClinchedPlayoffs bool    `json:"clinched_playoffs"`
+	DraftGrade       *string `json:"draft_grade,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 // RosterEntry represents a player slot on a fantasy team.

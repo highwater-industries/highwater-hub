@@ -56,7 +56,7 @@ class ESPNFantasyCollector(DataCollector):
     Public leagues can be fetched without any credentials.
     """
 
-    BASE_URL = "https://fantasy.espn.com/apis/v3/games/ffl"
+    BASE_URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl"
 
     def __init__(
         self,
@@ -115,12 +115,46 @@ class ESPNFantasyCollector(DataCollector):
             f"/segments/0/leagues/{self.league_id}"
         )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        cookies = self._cookies()
+        logger.info(
+            "ESPN request: url=%s swid_len=%d espn_s2_len=%d",
+            url,
+            len(cookies.get("SWID", "")),
+            len(cookies.get("espn_s2", "")),
+        )
+
+        headers = {
+            "Accept": "application/json",
+            "X-Fantasy-Source": "kona",
+            "X-Fantasy-Platform": "kona-PROD-6daa498ce7a94f1ea2f8607e8b498924c1e58dfe",
+        }
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             resp = await client.get(
                 url,
-                cookies=self._cookies(),
+                cookies=cookies,
+                headers=headers,
                 params={"view": ["mTeam", "mRoster", "mSettings"]},
             )
+
+            logger.info("ESPN response: status=%d url=%s", resp.status_code, resp.url)
+
+            # ESPN returns 302 for private leagues with bad/missing auth
+            if resp.status_code == 302:
+                location = resp.headers.get("location", "")
+                raise RuntimeError(
+                    f"ESPN returned 302 redirect to {location}. "
+                    "This usually means the league is private and the "
+                    "SWID / espn_s2 cookies are missing, expired, or invalid. "
+                    "Re-copy them from your browser."
+                )
+
+            if resp.status_code == 404:
+                raise RuntimeError(
+                    f"ESPN returned 404 for league {self.league_id} season {self.season}. "
+                    "Check that the league ID and season are correct."
+                )
+
             resp.raise_for_status()
             data: Dict[str, Any] = resp.json()
 
@@ -168,16 +202,35 @@ class ESPNFantasyCollector(DataCollector):
 
     def _extract_league(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         settings = raw.get("settings", {})
+
+        # Derive scoring type from schedule settings
+        sched = settings.get("scheduleSettings", {})
+        # ESPN uses matchupPeriodCount > 0 for head-to-head leagues
+        # and periodTypeId to distinguish (1=H2H, 0=roto-ish)
+        scoring_settings = settings.get("scoringSettings", {})
+        scoring_type_id = scoring_settings.get("scoringType")
+        if sched.get("matchupPeriodCount", 0) > 0:
+            scoring_type = "head_to_head"
+        else:
+            scoring_type = "roto"
+        # Override if ESPN explicitly sets scoringType
+        if scoring_type_id == "H2H_POINTS":
+            scoring_type = "head_to_head"
+        elif scoring_type_id == "H2H_CATEGORY":
+            scoring_type = "head_to_head_category"
+        elif scoring_type_id == "TOTAL_POINTS":
+            scoring_type = "roto"
+
         return {
             "external_league_id": str(raw.get("id", self.league_id)),
             "league_name": settings.get("name", f"ESPN League {self.league_id}"),
             "platform": "espn",
             "season": self.season,
             "num_teams": len(raw.get("teams", [])),
-            "scoring_type": None,
+            "scoring_type": scoring_type,
             "settings": {
-                "schedule_type": settings.get("scheduleSettings", {}).get("type"),
-                "playoff_team_count": settings.get("scheduleSettings", {}).get("playoffTeamCount"),
+                "playoff_team_count": sched.get("playoffTeamCount"),
+                "matchup_period_count": sched.get("matchupPeriodCount"),
             },
         }
 
@@ -200,6 +253,14 @@ class ESPNFantasyCollector(DataCollector):
             owner_name = members.get(owner_id, "Unknown") if owner_id else "Unknown"
 
             record = t.get("record", {}).get("overall", {})
+
+            # Streak info
+            streak = record.get("streakLength", 0)
+            streak_type = record.get("streakType", "")
+            if isinstance(streak_type, str):
+                streak_type = streak_type.lower().replace("win", "win").replace("loss", "loss")
+
+            logo_url = t.get("logo", "")
 
             roster: List[Dict[str, Any]] = []
             for entry in t.get("roster", {}).get("entries", []):
@@ -228,10 +289,20 @@ class ESPNFantasyCollector(DataCollector):
                 "ties": record.get("ties", 0),
                 "points_for": record.get("pointsFor", 0.0),
                 "points_against": record.get("pointsAgainst", 0.0),
-                "standing_rank": t.get("playoffSeed"),
+                "standing_rank": None,  # computed below after sorting
                 "playoff_seed": t.get("playoffSeed"),
+                "logo_url": logo_url,
+                "streak_type": streak_type,
+                "streak_value": streak,
                 "roster": roster,
             })
+
+        # Compute standing_rank from record (wins desc, points_for desc)
+        teams.sort(
+            key=lambda x: (-x["wins"], x["losses"], -x["points_for"])
+        )
+        for rank, team in enumerate(teams, start=1):
+            team["standing_rank"] = rank
 
         return teams
 

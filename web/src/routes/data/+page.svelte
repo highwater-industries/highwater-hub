@@ -117,6 +117,12 @@
 	let fantasyImporting = $state(false);
 	let fantasyMessage = $state('');
 
+	// Hydrate ESPN cookies from localStorage
+	if (typeof localStorage !== 'undefined') {
+		fantasySwid = localStorage.getItem('espn_swid') || '';
+		fantasyEspnS2 = localStorage.getItem('espn_s2') || '';
+	}
+
 	const strategies = [
 		{ value: 'merge', label: 'Merge', desc: 'Upsert — update existing, insert new' },
 		{ value: 'replace', label: 'Replace', desc: 'Delete all from source, insert fresh' },
@@ -441,6 +447,16 @@
 		}).catch(() => {});
 	});
 	onDestroy(stopPolling);
+
+	// Persist ESPN cookies to localStorage when they change
+	$effect(() => {
+		if (typeof localStorage !== 'undefined') {
+			if (fantasySwid) localStorage.setItem('espn_swid', fantasySwid);
+			else localStorage.removeItem('espn_swid');
+			if (fantasyEspnS2) localStorage.setItem('espn_s2', fantasyEspnS2);
+			else localStorage.removeItem('espn_s2');
+		}
+	});
 
 	// Lazy-load data when tabs change
 	$effect(() => {

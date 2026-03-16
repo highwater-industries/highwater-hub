@@ -74,16 +74,35 @@ _POSITION_MAP: Dict[str, str] = {
 _DEFENSE_POSITIONS = frozenset({"DST", "DEF", "D/ST", "DEFENSE"})
 
 
+def _db_normalise_expr(col):
+    """Build a SQL expression that normalises a player_name column.
+
+    Mirrors the Python ``_normalise`` function so both sides of a
+    comparison are treated identically: lowercase, strip periods,
+    remove Jr/Sr/II/III/IV/V suffixes, and collapse whitespace.
+    """
+    expr = func.lower(col)
+    expr = func.replace(expr, ".", "")
+    expr = func.replace(expr, "'", "")
+    expr = func.replace(expr, "`", "")
+    expr = func.replace(expr, "-", " ")
+    expr = func.regexp_replace(expr, r"\m(jr|sr|ii|iii|iv|v)\M", "", "gi")
+    expr = func.regexp_replace(expr, r"\s+", " ", "g")
+    expr = func.trim(expr)
+    return expr
+
+
 def _normalise(name: str) -> str:
     """Lowercase, strip accents/suffixes (Jr, II, III...), collapse whitespace."""
     name = name.lower().strip()
     # Strip Unicode accents (é → e, etc.)
     name = unicodedata.normalize("NFKD", name)
     name = "".join(c for c in name if not unicodedata.combining(c))
-    name = _STRIP_RE.sub("", name)
-    name = _WHITESPACE_RE.sub(" ", name).strip()
-    # Remove periods from initials: "T.J." -> "tj"
+    # Remove periods BEFORE stripping suffixes so "Jr." becomes "Jr"
     name = name.replace(".", "")
+    name = _STRIP_RE.sub("", name)
+    name = _PUNCT_TO_SPACE.sub(" ", name)
+    name = _WHITESPACE_RE.sub(" ", name).strip()
     return name
 
 
@@ -195,55 +214,34 @@ class PlayerResolver:
                 return self._cache[key]
 
         # --- Phase 2: DB lookup on players table ---
-        # 2a. Case-insensitive exact match on player_name
-        #     Use scalars().all() to handle duplicate names (e.g. "Josh Allen" QB & DE)
+        # 2a. Case-insensitive exact match on player_name (raw, as stored)
         candidates = self._session.execute(
             select(PlayerDB).where(
                 func.lower(PlayerDB.player_name) == name.lower().strip()
             )
         ).scalars().all()
 
-        player = None
-        if len(candidates) == 1:
-            player = candidates[0]
-        elif len(candidates) > 1:
-            # Multiple matches — narrow by position first, then team
-            if pos:
-                pos_matches = [p for p in candidates if p.player_position == pos]
-                if len(pos_matches) == 1:
-                    player = pos_matches[0]
-                elif len(pos_matches) > 1 and team:
-                    team_matches = [p for p in pos_matches if p.team == team]
-                    if len(team_matches) == 1:
-                        player = team_matches[0]
-            if player is None and team:
-                team_matches = [p for p in candidates if p.team == team]
-                if len(team_matches) == 1:
-                    player = team_matches[0]
+        player = self._disambiguate(candidates, pos, team)
 
-        # 2b. Try normalised/ILIKE match (strips Jr/II/III and periods)
+        # 2b. Try normalised exact match (strips Jr/Sr, periods on BOTH sides)
         if player is None:
-            # Search by ILIKE with the normalised name
             all_candidates = self._session.execute(
                 select(PlayerDB).where(
-                    PlayerDB.player_name.ilike(f"%{norm}%")
+                    _db_normalise_expr(PlayerDB.player_name) == norm
                 )
             ).scalars().all()
 
-            # Filter by position first if available
-            if pos:
-                pos_matches = [p for p in all_candidates if p.player_position == pos]
-                if pos_matches:
-                    all_candidates = pos_matches
+            player = self._disambiguate(all_candidates, pos, team)
 
-            if team:
-                team_matches = [p for p in all_candidates if p.team == team]
-                if len(team_matches) == 1:
-                    player = team_matches[0]
-                elif len(all_candidates) == 1:
-                    player = all_candidates[0]
-            elif len(all_candidates) == 1:
-                player = all_candidates[0]
+        # 2c. Try ILIKE substring match as last resort
+        if player is None:
+            all_candidates = self._session.execute(
+                select(PlayerDB).where(
+                    _db_normalise_expr(PlayerDB.player_name).ilike(f"%{norm}%")
+                )
+            ).scalars().all()
+
+            player = self._disambiguate(all_candidates, pos, team)
 
         if player is None or player.player_id is None:
             # Cache the miss so we don't retry
@@ -253,7 +251,6 @@ class PlayerResolver:
         pid = player.player_id
 
         # --- Phase 3: Create alias for next time ---
-        # Only create alias if name is different from the canonical name
         canon_norm = _normalise(player.player_name)
         if norm != canon_norm:
             try:
@@ -271,13 +268,46 @@ class PlayerResolver:
                     name.strip(), pid, source, team,
                 )
             except Exception:
-                # Unique constraint violation — alias already exists
                 self._session.rollback()
                 logger.debug("Alias already exists for '%s'", name.strip())
 
         # Cache the hit
         self._cache[(norm, source, team)] = pid
         return pid
+
+    @staticmethod
+    def _disambiguate(
+        candidates: list,
+        pos: str | None,
+        team: str | None,
+    ) -> Optional["PlayerDB"]:
+        """Pick the best match from a list of DB candidates.
+
+        Priority: position match → team match → sole candidate.
+        Trades can cause team mismatches, so if name+position yields
+        exactly one hit we accept it even when teams differ.
+        """
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # Narrow by position first
+        if pos:
+            pos_matches = [p for p in candidates if p.player_position == pos]
+            if len(pos_matches) == 1:
+                return pos_matches[0]
+            if pos_matches:
+                candidates = pos_matches
+
+        # Then try team
+        if team:
+            team_matches = [p for p in candidates if p.team == team]
+            if len(team_matches) == 1:
+                return team_matches[0]
+
+        # Still ambiguous — give up rather than guess wrong
+        return None
 
     def seed_from_roster(self) -> int:
         """Seed aliases from the players table — canonical name → player_id.

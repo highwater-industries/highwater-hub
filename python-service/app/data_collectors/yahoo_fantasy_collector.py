@@ -78,12 +78,14 @@ class YahooFantasyCollector(DataCollector):
 
         self._game = yfa.Game(self._oauth, "nfl")
 
-        # Accept both "12345" and "nfl.l.12345" formats.
-        league_key = (
-            self.league_id
-            if self.league_id.startswith("nfl.")
-            else f"nfl.l.{self.league_id}"
-        )
+        # Accept formats:
+        #   "158244"           → current-season shorthand "nfl.l.158244"
+        #   "nfl.l.158244"     → current-season shorthand (as-is)
+        #   "461.l.158244"     → historical game-key-prefixed (as-is)
+        if "." in self.league_id:
+            league_key = self.league_id           # already qualified
+        else:
+            league_key = f"nfl.l.{self.league_id}"
         self._league = self._game.to_league(league_key)
         logger.info("Connected to Yahoo league: %s", league_key)
 
@@ -166,13 +168,20 @@ class YahooFantasyCollector(DataCollector):
             or f"Yahoo League {self.league_id}"
         )
 
+        # Extract bare league number from any key format
+        # e.g. "390.l.113462" → "113462", "nfl.l.158244" → "158244"
+        bare_id = self.league_id.rsplit(".", 1)[-1] if "." in self.league_id else self.league_id
+
         return {
-            "external_league_id": self.league_id,
+            "external_league_id": bare_id,
             "league_name": league_name,
             "platform": "yahoo",
             "season": self.season,
             "num_teams": metadata.get("num_teams") or settings.get("num_teams"),
-            "scoring_type": settings.get("scoring_type"),
+            "scoring_type": {
+                "head": "head_to_head",
+                "roto": "roto",
+            }.get(settings.get("scoring_type", ""), settings.get("scoring_type")),
             "settings": {
                 "roster_positions": settings.get("roster_positions", []),
                 "stat_categories": settings.get("stat_categories", {}),
@@ -182,59 +191,91 @@ class YahooFantasyCollector(DataCollector):
         }
 
     def _fetch_teams(self) -> List[Dict[str, Any]]:
-        """Return all teams with standing data."""
+        """Return all teams with standing data.
+
+        Yahoo's ``teams()`` returns basic info (name, managers, logo)
+        while ``standings()`` has records, points, rank, and streak.
+        We merge both by ``team_key``.
+        """
         teams_raw = self._league.teams()
         teams: dict = teams_raw if isinstance(teams_raw, dict) else {}
 
-        standings: list = []
+        # Build standings lookup keyed by team_key
+        standings_map: Dict[str, dict] = {}
         try:
             standings_raw = self._league.standings()
-            standings = standings_raw if isinstance(standings_raw, list) else []
+            for entry in (standings_raw if isinstance(standings_raw, list) else []):
+                if isinstance(entry, dict) and "team_key" in entry:
+                    standings_map[entry["team_key"]] = entry
         except Exception:
-            pass
+            logger.warning("Could not fetch Yahoo standings — records/points will be 0")
 
         result: List[Dict[str, Any]] = []
         for team_key, info in teams.items():
             if not isinstance(info, dict):
                 continue
 
-            manager = info.get("manager", {})
-            manager = manager if isinstance(manager, dict) else {}
+            # --- Owner name ---
+            # teams() returns managers as a list of {manager: {nickname, ...}}
+            owner_name = "Unknown"
+            managers = info.get("managers")
+            if isinstance(managers, list) and managers:
+                first = managers[0]
+                if isinstance(first, dict):
+                    mgr = first.get("manager", first)
+                    owner_name = mgr.get("nickname", "Unknown") if isinstance(mgr, dict) else "Unknown"
+            elif isinstance(info.get("manager"), dict):
+                owner_name = info["manager"].get("nickname", "Unknown")
 
-            # Standings data may be nested in team_info or in the standalone list.
-            outcomes: dict = {}
-            ts = info.get("team_standings")
-            if isinstance(ts, dict):
-                outcomes = ts.get("outcome_totals", {})
-            if not outcomes:
-                for s in standings:
-                    if isinstance(s, dict) and s.get("team_key") == team_key:
-                        outcomes = s.get("outcome_totals", {})
-                        break
+            # --- Standings from standings() ---
+            st = standings_map.get(team_key, {})
+            outcomes = st.get("outcome_totals", {})
+            if not isinstance(outcomes, dict):
+                outcomes = {}
 
-            tp = info.get("team_points", {})
-            tpa = info.get("team_points_against", {})
+            # points_for/against can be top-level strings or nested dicts
+            pf_raw = st.get("points_for", 0)
+            pa_raw = st.get("points_against", 0)
+            points_for = float(pf_raw) if not isinstance(pf_raw, dict) else float(pf_raw.get("total", 0))
+            points_against = float(pa_raw) if not isinstance(pa_raw, dict) else float(pa_raw.get("total", 0))
+
+            # Streak info
+            streak = st.get("streak", {})
+            streak_type = streak.get("type", "") if isinstance(streak, dict) else ""
+            streak_value = int(streak.get("value", 0)) if isinstance(streak, dict) else 0
+
+            # Team logo
+            logo_url = ""
+            logos = info.get("team_logos", [])
+            if isinstance(logos, list) and logos:
+                logo_entry = logos[0] if isinstance(logos[0], dict) else {}
+                tl = logo_entry.get("team_logo", {})
+                logo_url = tl.get("url", "") if isinstance(tl, dict) else ""
 
             result.append({
                 "team_key": team_key,
                 "external_team_id": team_key,
                 "team_name": info.get("name", "Unknown Team"),
-                "owner_name": manager.get("nickname", "Unknown"),
+                "owner_name": owner_name,
                 "wins": int(outcomes.get("wins", 0) or 0),
                 "losses": int(outcomes.get("losses", 0) or 0),
                 "ties": int(outcomes.get("ties", 0) or 0),
-                "points_for": float(tp.get("total", 0)) if isinstance(tp, dict) else 0.0,
-                "points_against": float(tpa.get("total", 0)) if isinstance(tpa, dict) else 0.0,
-                "standing_rank": (
-                    int(ts.get("rank"))
-                    if isinstance(ts, dict) and ts.get("rank")
-                    else None
-                ),
+                "points_for": points_for,
+                "points_against": points_against,
+                "standing_rank": int(st["rank"]) if st.get("rank") else None,
                 "playoff_seed": (
-                    int(ts.get("playoff_seed"))
-                    if isinstance(ts, dict) and ts.get("playoff_seed")
+                    int(st["playoff_seed"])
+                    if st.get("playoff_seed")
                     else None
                 ),
+                "streak_type": streak_type,
+                "streak_value": streak_value,
+                "logo_url": logo_url,
+                "waiver_priority": int(info.get("waiver_priority", 0) or 0),
+                "number_of_moves": int(info.get("number_of_moves", 0) or 0),
+                "number_of_trades": int(info.get("number_of_trades", 0) or 0),
+                "clinched_playoffs": bool(info.get("clinched_playoffs")),
+                "draft_grade": info.get("draft_grade", ""),
             })
 
         return result

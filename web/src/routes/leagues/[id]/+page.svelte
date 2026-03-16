@@ -99,15 +99,17 @@
 		<div class="flex flex-wrap gap-6 text-sm">
 			<div><span class="font-semibold">Teams:</span> {league.num_teams ?? teams.length}</div>
 			{#if league.scoring_type}
-				<div><span class="font-semibold">Scoring:</span> {league.scoring_type}</div>
+				<div><span class="font-semibold">Scoring:</span> <span class="capitalize">{league.scoring_type.replaceAll('_', ' ')}</span></div>
 			{/if}
 			<div><span class="font-semibold">External ID:</span> {league.external_league_id}</div>
+			<div><span class="font-semibold">Last Sync:</span> {new Date(league.updated_at).toLocaleString()}</div>
 		</div>
 	</div>
 
 	<!-- Standings table -->
 	<h2 class="text-lg font-bold mb-3">Standings</h2>
 	<div class="card bg-base-100 shadow-sm overflow-hidden mb-6">
+		<div class="overflow-x-auto">
 		<table class="table table-zebra table-pin-rows">
 			<thead>
 				<tr>
@@ -117,6 +119,7 @@
 					<th class="text-center">Record</th>
 					<th class="text-right">PF</th>
 					<th class="text-right">PA</th>
+					<th class="text-center">Streak</th>
 					<th class="w-20"></th>
 				</tr>
 			</thead>
@@ -124,11 +127,33 @@
 				{#each teams as team, i}
 					<tr class="hover">
 						<td class="text-right font-bold text-accent">{team.standing_rank ?? i + 1}</td>
-						<td class="font-bold">{team.team_name}</td>
+						<td>
+							<div class="flex items-center gap-2">
+								{#if team.logo_url}
+									<img src={team.logo_url} alt="" class="w-6 h-6 rounded" />
+								{/if}
+								<span class="font-bold">{team.team_name}</span>
+								{#if team.clinched_playoffs}
+									<span class="badge badge-success badge-xs" title="Clinched Playoffs">✓</span>
+								{/if}
+								{#if team.draft_grade}
+									<span class="badge badge-ghost badge-xs" title="Draft Grade">{team.draft_grade}</span>
+								{/if}
+							</div>
+						</td>
 						<td class="text-base-content/70">{team.owner_name ?? '—'}</td>
-						<td class="text-center">{fmtRecord(team)}</td>
-						<td class="text-right">{team.points_for.toFixed(1)}</td>
-						<td class="text-right">{team.points_against.toFixed(1)}</td>
+						<td class="text-center font-mono">{fmtRecord(team)}</td>
+						<td class="text-right font-mono">{team.points_for.toFixed(1)}</td>
+						<td class="text-right font-mono">{team.points_against.toFixed(1)}</td>
+						<td class="text-center">
+							{#if team.streak_type && team.streak_value > 0}
+								<span class="badge badge-sm {team.streak_type === 'win' ? 'badge-success' : 'badge-error'}">
+									{team.streak_type === 'win' ? 'W' : 'L'}{team.streak_value}
+								</span>
+							{:else}
+								<span class="text-base-content/30">—</span>
+							{/if}
+						</td>
 						<td>
 							<button
 								class="btn btn-ghost btn-xs"
@@ -140,7 +165,7 @@
 					</tr>
 					{#if expandedTeamId === team.id}
 						<tr>
-							<td colspan="7" class="bg-base-200 p-0">
+							<td colspan="8" class="bg-base-200 p-0">
 								{#if rosterLoading}
 									<div class="p-4 text-center">
 										<span class="loading loading-spinner loading-sm"></span>
@@ -191,5 +216,6 @@
 				{/each}
 			</tbody>
 		</table>
+		</div>
 	</div>
 {/if}

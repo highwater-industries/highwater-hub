@@ -26,6 +26,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/nflstats
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - ./python-service/oauth2.json:/app/oauth2.json
 
   celery-worker:
     build:
@@ -38,6 +40,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://appuser:apppass@postgres:5432/nflstats
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - ./python-service/oauth2.json:/app/oauth2.json
 
   postgres:
     image: postgres:16-alpine

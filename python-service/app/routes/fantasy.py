@@ -39,10 +39,12 @@ async def start_fantasy_import(body: FantasyImportRequest):
     collector_type = f"{platform}_fantasy"
 
     logger.info(
-        "Fantasy import requested: platform=%s league=%s season=%d",
+        "Fantasy import requested: platform=%s league=%s season=%d swid=%s espn_s2=%s",
         platform,
         body.league_id,
         body.season,
+        body.espn_swid[:8] + "..." if body.espn_swid else None,
+        body.espn_s2[:8] + "..." if body.espn_s2 else None,
     )
 
     # ESPN private leagues require cookies

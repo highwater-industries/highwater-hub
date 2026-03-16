@@ -153,6 +153,14 @@ def _persist_fantasy_league(
                 points_against=team_data.get("points_against", 0.0),
                 standing_rank=team_data.get("standing_rank"),
                 playoff_seed=team_data.get("playoff_seed"),
+                logo_url=team_data.get("logo_url", ""),
+                streak_type=team_data.get("streak_type", ""),
+                streak_value=team_data.get("streak_value", 0),
+                waiver_priority=team_data.get("waiver_priority", 0),
+                number_of_moves=team_data.get("number_of_moves", 0),
+                number_of_trades=team_data.get("number_of_trades", 0),
+                clinched_playoffs=team_data.get("clinched_playoffs", False),
+                draft_grade=team_data.get("draft_grade", ""),
             )
             session.add(team)
             session.flush()  # populate team.id

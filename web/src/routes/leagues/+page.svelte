@@ -117,16 +117,19 @@
 				<div class="card-body p-4">
 					<div class="flex items-center justify-between mb-1">
 						<span class="badge {platformBadge(league.platform)} badge-sm uppercase">{league.platform}</span>
-						<span class="text-sm text-base-content/60">{league.season}</span>
+						<span class="text-sm font-semibold text-base-content/80">{league.season}</span>
 					</div>
 					<h3 class="card-title text-base">{league.league_name}</h3>
 					<div class="flex gap-4 text-sm text-base-content/70 mt-1">
 						{#if league.num_teams}
-							<span>{league.num_teams} teams</span>
+							<span>🏈 {league.num_teams} teams</span>
 						{/if}
 						{#if league.scoring_type}
-							<span>{league.scoring_type}</span>
+							<span class="capitalize">{league.scoring_type.replaceAll('_', ' ')}</span>
 						{/if}
+					</div>
+					<div class="text-xs text-base-content/40 mt-2">
+						Updated {new Date(league.updated_at).toLocaleDateString()}
 					</div>
 				</div>
 			</a>

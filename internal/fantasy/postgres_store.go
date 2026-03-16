@@ -130,7 +130,11 @@ func (s *PostgresStore) ListTeams(ctx context.Context, leagueID int) ([]Team, er
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, league_id, external_team_id, team_name, owner_name,
                 wins, losses, ties, points_for, points_against,
-                standing_rank, playoff_seed, created_at, updated_at
+                standing_rank, playoff_seed,
+                logo_url, streak_type, streak_value,
+                waiver_priority, number_of_moves, number_of_trades,
+                clinched_playoffs, draft_grade,
+                created_at, updated_at
          FROM fantasy_teams
          WHERE league_id = $1
          ORDER BY COALESCE(standing_rank, 9999), team_name`, leagueID,
@@ -143,13 +147,16 @@ func (s *PostgresStore) ListTeams(ctx context.Context, leagueID int) ([]Team, er
 	teams := make([]Team, 0)
 	for rows.Next() {
 		var t Team
-		var extID, owner sql.NullString
+		var extID, owner, logoURL, streakType, draftGrade sql.NullString
 		var rank, seed sql.NullInt64
 
 		err := rows.Scan(
 			&t.ID, &t.LeagueID, &extID, &t.TeamName, &owner,
 			&t.Wins, &t.Losses, &t.Ties, &t.PointsFor, &t.PointsAgainst,
 			&rank, &seed,
+			&logoURL, &streakType, &t.StreakValue,
+			&t.WaiverPriority, &t.NumberOfMoves, &t.NumberOfTrades,
+			&t.ClinchedPlayoffs, &draftGrade,
 			&t.CreatedAt, &t.UpdatedAt,
 		)
 		if err != nil {
@@ -170,6 +177,15 @@ func (s *PostgresStore) ListTeams(ctx context.Context, leagueID int) ([]Team, er
 			v := int(seed.Int64)
 			t.PlayoffSeed = &v
 		}
+		if logoURL.Valid {
+			t.LogoURL = &logoURL.String
+		}
+		if streakType.Valid {
+			t.StreakType = &streakType.String
+		}
+		if draftGrade.Valid {
+			t.DraftGrade = &draftGrade.String
+		}
 
 		teams = append(teams, t)
 	}
@@ -183,18 +199,25 @@ func (s *PostgresStore) ListTeams(ctx context.Context, leagueID int) ([]Team, er
 // GetTeam returns a single team by ID.
 func (s *PostgresStore) GetTeam(ctx context.Context, teamID int) (Team, error) {
 	var t Team
-	var extID, owner sql.NullString
+	var extID, owner, logoURL, streakType, draftGrade sql.NullString
 	var rank, seed sql.NullInt64
 
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, league_id, external_team_id, team_name, owner_name,
                 wins, losses, ties, points_for, points_against,
-                standing_rank, playoff_seed, created_at, updated_at
+                standing_rank, playoff_seed,
+                logo_url, streak_type, streak_value,
+                waiver_priority, number_of_moves, number_of_trades,
+                clinched_playoffs, draft_grade,
+                created_at, updated_at
          FROM fantasy_teams WHERE id = $1`, teamID,
 	).Scan(
 		&t.ID, &t.LeagueID, &extID, &t.TeamName, &owner,
 		&t.Wins, &t.Losses, &t.Ties, &t.PointsFor, &t.PointsAgainst,
 		&rank, &seed,
+		&logoURL, &streakType, &t.StreakValue,
+		&t.WaiverPriority, &t.NumberOfMoves, &t.NumberOfTrades,
+		&t.ClinchedPlayoffs, &draftGrade,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
@@ -214,6 +237,15 @@ func (s *PostgresStore) GetTeam(ctx context.Context, teamID int) (Team, error) {
 	if seed.Valid {
 		v := int(seed.Int64)
 		t.PlayoffSeed = &v
+	}
+	if logoURL.Valid {
+		t.LogoURL = &logoURL.String
+	}
+	if streakType.Valid {
+		t.StreakType = &streakType.String
+	}
+	if draftGrade.Valid {
+		t.DraftGrade = &draftGrade.String
 	}
 
 	return t, nil
