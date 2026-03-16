@@ -299,3 +299,46 @@ func (s *PostgresStore) ListRoster(ctx context.Context, teamID int) ([]RosterEnt
 
 	return roster, nil
 }
+
+// ListMatchups returns all weekly matchup rows for a given league.
+func (s *PostgresStore) ListMatchups(ctx context.Context, leagueID int) ([]Matchup, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, league_id, week, matchup_id, team_name,
+                external_team_id, points, result, is_playoff, created_at
+         FROM fantasy_matchups
+         WHERE league_id = $1
+         ORDER BY week, matchup_id, team_name`, leagueID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query matchups: %w", err)
+	}
+	defer rows.Close()
+
+	matchups := make([]Matchup, 0)
+	for rows.Next() {
+		var m Matchup
+		var extID, result sql.NullString
+
+		err := rows.Scan(
+			&m.ID, &m.LeagueID, &m.Week, &m.MatchupID, &m.TeamName,
+			&extID, &m.Points, &result, &m.IsPlayoff, &m.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan matchup: %w", err)
+		}
+
+		if extID.Valid {
+			m.ExternalTeamID = &extID.String
+		}
+		if result.Valid {
+			m.Result = &result.String
+		}
+
+		matchups = append(matchups, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate matchups: %w", err)
+	}
+
+	return matchups, nil
+}

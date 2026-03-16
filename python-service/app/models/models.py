@@ -552,3 +552,57 @@ class FantasyRoster(Base):
             name="uq_fantasy_roster_team_player",
         ),
     )
+
+
+# ------------------------------------------------------------------
+# Fantasy Matchups — weekly head-to-head results
+# ------------------------------------------------------------------
+
+
+class FantasyMatchup(Base):
+    """A single team's result in a weekly matchup.
+
+    Each H2H matchup produces **two** rows (one per team).  The pair
+    shares the same ``(league_id, week, matchup_id)``.
+    """
+
+    __tablename__ = "fantasy_matchups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True,
+        comment="FK to fantasy_leagues.id",
+    )
+    week: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="Scoring period / matchup week"
+    )
+    matchup_id: Mapped[int] = mapped_column(
+        Integer, nullable=False,
+        comment="Pairs the two opponents in the same week",
+    )
+    team_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_team_id: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True,
+    )
+    points: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0,
+        comment="Total fantasy points scored this week",
+    )
+    result: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True,
+        comment="W, L, T, or NULL if not yet played",
+    )
+    is_playoff: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_fantasy_matchups_league_week", "league_id", "week"),
+        UniqueConstraint(
+            "league_id", "week", "external_team_id",
+            name="uq_fantasy_matchup_league_week_team",
+        ),
+    )

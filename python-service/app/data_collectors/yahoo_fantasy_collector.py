@@ -98,32 +98,37 @@ class YahooFantasyCollector(DataCollector):
     # ------------------------------------------------------------------
 
     async def fetch(self) -> Dict[str, Any]:
-        """Fetch league details, teams, and rosters from Yahoo."""
+        """Fetch league details, teams, rosters, and matchups from Yahoo."""
         self._connect()
 
-        self._progress(1, 4, {"step": "Fetching league details"})
+        self._progress(1, 5, {"step": "Fetching league details"})
         league_data = self._fetch_league()
 
-        self._progress(2, 4, {"step": "Fetching teams"})
+        self._progress(2, 5, {"step": "Fetching teams"})
         teams_data = self._fetch_teams()
 
-        self._progress(3, 4, {"step": "Fetching rosters"})
+        self._progress(3, 5, {"step": "Fetching rosters"})
         for team in teams_data:
             team["roster"] = self._fetch_roster(team["team_key"])
 
-        self._progress(4, 4, {"step": "Complete"})
+        self._progress(4, 5, {"step": "Fetching weekly matchups"})
+        matchups_data = self._fetch_matchups(teams_data)
+
+        self._progress(5, 5, {"step": "Complete"})
 
         total_players = sum(len(t.get("roster", [])) for t in teams_data)
         logger.info(
-            "Fetched Yahoo league '%s': %d teams, %d roster entries",
+            "Fetched Yahoo league '%s': %d teams, %d roster entries, %d matchup rows",
             league_data.get("league_name", "?"),
             len(teams_data),
             total_players,
+            len(matchups_data),
         )
 
         return {
             "league": league_data,
             "teams": teams_data,
+            "matchups": matchups_data,
             "platform": "yahoo",
             "season": self.season,
             "total_players": total_players,
@@ -312,6 +317,108 @@ class YahooFantasyCollector(DataCollector):
             })
 
         return players
+
+    def _fetch_matchups(self, teams_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Return weekly matchup scores for all completed weeks.
+
+        Uses ``self._league.matchups(week=N)`` which returns the raw Yahoo
+        scoreboard JSON for a given week.
+        """
+        # Determine how many weeks to fetch
+        end_week = int(self._league.end_week())
+        current_week = int(self._league.current_week())
+        max_week = min(current_week, end_week)
+
+        matchups: List[Dict[str, Any]] = []
+        for week in range(1, max_week + 1):
+            try:
+                raw = self._league.matchups(week=week)
+            except Exception as exc:
+                logger.warning("Yahoo matchups week %d failed: %s", week, exc)
+                continue
+
+            try:
+                scoreboard = raw["fantasy_content"]["league"][1]["scoreboard"]
+                matchups_obj = scoreboard["0"]["matchups"]
+            except (KeyError, IndexError, TypeError):
+                logger.warning("Unexpected scoreboard structure for week %d", week)
+                continue
+
+            # matchups_obj is keyed "0", "1", …, "count"
+            count = int(matchups_obj.get("count", 0))
+            for m_idx in range(count):
+                matchup = matchups_obj.get(str(m_idx), {}).get("matchup", {})
+                if not matchup:
+                    continue
+
+                is_playoff = matchup.get("is_playoffs", "0") == "1"
+                is_consolation = matchup.get("is_consolation", "0") == "1"
+                winner_key = matchup.get("winner_team_key", "")
+                is_tied = matchup.get("is_tied", 0)
+
+                # Teams are in matchup["0"]["teams"]["0"] and ["1"]
+                teams_container = matchup.get("0", {}).get("teams", {})
+
+                team_rows = []
+                for t_idx in range(2):
+                    team_data = teams_container.get(str(t_idx), {}).get("team")
+                    if not team_data or not isinstance(team_data, list):
+                        continue
+
+                    # team_data[0] is a list of info dicts, team_data[1] has points
+                    info_list = team_data[0] if isinstance(team_data[0], list) else []
+                    stats = team_data[1] if len(team_data) > 1 else {}
+
+                    team_key = ""
+                    team_id = ""
+                    team_name = "Unknown"
+                    for item in info_list:
+                        if isinstance(item, dict):
+                            if "team_key" in item:
+                                team_key = item["team_key"]
+                            if "team_id" in item:
+                                team_id = item["team_id"]
+                            if "name" in item:
+                                team_name = item["name"]
+
+                    points = 0.0
+                    if isinstance(stats, dict):
+                        tp = stats.get("team_points", {})
+                        points = float(tp.get("total", 0) or 0)
+
+                    team_rows.append({
+                        "team_key": team_key,
+                        "team_id": team_id,
+                        "team_name": team_name,
+                        "points": points,
+                    })
+
+                # Determine results
+                for i, row in enumerate(team_rows):
+                    if is_tied:
+                        result = "T"
+                    elif row["team_key"] == winner_key:
+                        result = "W"
+                    elif winner_key:
+                        result = "L"
+                    else:
+                        result = None
+
+                    matchups.append({
+                        "week": week,
+                        "matchup_id": m_idx,
+                        "team_name": row["team_name"],
+                        "external_team_id": row["team_key"],
+                        "points": row["points"],
+                        "result": result,
+                        "is_playoff": is_playoff or is_consolation,
+                    })
+
+        logger.info(
+            "Fetched %d matchup rows for %d weeks",
+            len(matchups), max_week,
+        )
+        return matchups
 
 
 # Auto-register with the factory

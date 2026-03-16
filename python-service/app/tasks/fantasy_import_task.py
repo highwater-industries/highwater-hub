@@ -20,6 +20,7 @@ from app.database import SyncSession, create_tables_sync
 from app.models.models import (
     CollectionHistory,
     FantasyLeague,
+    FantasyMatchup,
     FantasyRoster,
     FantasyTeam,
 )
@@ -78,12 +79,13 @@ def _persist_fantasy_league(
     resolver: PlayerResolver,
     platform: str,
 ) -> Dict[str, Any]:
-    """Create/update league, teams, and roster rows.
+    """Create/update league, teams, roster rows, and matchup rows.
 
     Returns a counters dict suitable for collection_history.
     """
     league_data = data["league"]
     teams_data = data["teams"]
+    matchups_data = data.get("matchups", [])
 
     inserted = 0
     updated = 0
@@ -137,6 +139,14 @@ def _persist_fantasy_league(
                 ).scalars().all():
                     session.delete(r)
                 session.delete(t)
+
+            # Clear existing matchups for re-import
+            existing_matchups = session.execute(
+                select(FantasyMatchup).where(FantasyMatchup.league_id == league.id)
+            ).scalars().all()
+            for m in existing_matchups:
+                session.delete(m)
+
             session.flush()
 
         # ---- Teams + rosters
@@ -193,7 +203,26 @@ def _persist_fantasy_league(
                         "team": resolve_result.team,
                     })
 
+        # ---- Matchups (weekly scores)
+        for m in matchups_data:
+            matchup_row = FantasyMatchup(
+                league_id=league.id,
+                week=m["week"],
+                matchup_id=m["matchup_id"],
+                team_name=m["team_name"],
+                external_team_id=m.get("external_team_id"),
+                points=m.get("points", 0.0),
+                result=m.get("result"),
+                is_playoff=m.get("is_playoff", False),
+            )
+            session.add(matchup_row)
+            inserted += 1
+
         session.commit()
+        logger.info(
+            "Persisted %d matchup rows for league %s",
+            len(matchups_data), league_data["league_name"],
+        )
 
     return {
         "inserted": inserted,

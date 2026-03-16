@@ -127,6 +127,31 @@ func HandleGetTeam(store Store) http.HandlerFunc {
 	}
 }
 
+// HandleListMatchups returns all weekly matchup scores for a league.
+//
+//	GET /api/fantasy/leagues/{id}/matchups
+func HandleListMatchups(store Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			httputil.Encode(w, http.StatusBadRequest, httputil.ErrorResponse{
+				Error: "invalid league id",
+			})
+			return
+		}
+
+		matchups, err := store.ListMatchups(r.Context(), id)
+		if err != nil {
+			httputil.Encode(w, http.StatusInternalServerError, httputil.ErrorResponse{
+				Error: "failed to get matchups: " + err.Error(),
+			})
+			return
+		}
+
+		httputil.Encode(w, http.StatusOK, matchups)
+	}
+}
+
 // HandleStartImport dispatches a fantasy league import to the Python service.
 //
 //	POST /api/fantasy/import

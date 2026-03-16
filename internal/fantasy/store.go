@@ -18,4 +18,7 @@ type Store interface {
 
 	// ListRoster returns all roster entries for a given team.
 	ListRoster(ctx context.Context, teamID int) ([]RosterEntry, error)
+
+	// ListMatchups returns all weekly matchup rows for a given league.
+	ListMatchups(ctx context.Context, leagueID int) ([]Matchup, error)
 }

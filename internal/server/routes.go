@@ -71,6 +71,7 @@ func addRoutes(mux *http.ServeMux, cfg Config) {
 
 	// Fantasy Leagues
 	mux.HandleFunc("POST /api/fantasy/import", fantasy.HandleStartImport(cfg.FantasyClient))
+	mux.HandleFunc("GET /api/fantasy/leagues/{id}/matchups", fantasy.HandleListMatchups(cfg.FantasyStore))
 	mux.HandleFunc("GET /api/fantasy/leagues/{id}", fantasy.HandleGetLeague(cfg.FantasyStore))
 	mux.HandleFunc("GET /api/fantasy/leagues", fantasy.HandleListLeagues(cfg.FantasyStore))
 	mux.HandleFunc("GET /api/fantasy/teams/{id}", fantasy.HandleGetTeam(cfg.FantasyStore))

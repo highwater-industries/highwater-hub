@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import {
 		getFantasyLeague,
 		getFantasyTeam,
+		getFantasyMatchups,
 		type FantasyTeam,
 		type FantasyRosterEntry,
+		type FantasyMatchup,
 		type LeagueDetail
 	} from '$lib/api';
 
@@ -18,6 +20,15 @@
 	let expandedTeamId: number | null = $state(null);
 	let roster: FantasyRosterEntry[] = $state([]);
 	let rosterLoading = $state(false);
+
+	// Matchup chart
+	let matchups: FantasyMatchup[] = $state([]);
+	let matchupsLoading = $state(false);
+	let chartContainer: HTMLDivElement | undefined = $state(undefined);
+	let chartInstance: any = $state(null);
+
+	// Cumulative vs weekly toggle
+	let chartMode: 'cumulative' | 'weekly' = $state('cumulative');
 
 	let leagueId: number = $derived(Number($page.params.id));
 
@@ -31,6 +42,134 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	async function loadMatchups() {
+		matchupsLoading = true;
+		try {
+			matchups = await getFantasyMatchups(leagueId);
+			await tick();
+			renderChart();
+		} catch (e) {
+			console.error('Failed to load matchups', e);
+		} finally {
+			matchupsLoading = false;
+		}
+	}
+
+	function renderChart() {
+		if (!chartContainer || matchups.length === 0) return;
+		if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
+		}
+
+		// Group by team
+		const teamWeekly: Record<string, Record<number, number>> = {};
+		for (const m of matchups) {
+			if (!teamWeekly[m.team_name]) teamWeekly[m.team_name] = {};
+			teamWeekly[m.team_name][m.week] = m.points;
+		}
+
+		// Get sorted weeks
+		const weeks = [...new Set(matchups.map((m) => m.week))].sort((a, b) => a - b);
+
+		// Get teams sorted by total points (descending)
+		const teamTotals = Object.entries(teamWeekly).map(([name, wk]) => ({
+			name,
+			total: Object.values(wk).reduce((a, b) => a + b, 0)
+		}));
+		teamTotals.sort((a, b) => b.total - a.total);
+
+		// Colour palette
+		const colors = [
+			'#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
+			'#ec4899', '#14b8a6', '#f97316', '#6366f1', '#06b6d4',
+			'#84cc16', '#e11d48', '#0ea5e9', '#a855f7'
+		];
+
+		// Build series
+		const series = teamTotals.map(({ name }) => {
+			const weekData = teamWeekly[name];
+			let cumulative = 0;
+			return {
+				name,
+				data: weeks.map((w) => {
+					const pts = weekData[w] || 0;
+					if (chartMode === 'cumulative') {
+						cumulative += pts;
+						return Math.round(cumulative * 10) / 10;
+					}
+					return Math.round(pts * 10) / 10;
+				})
+			};
+		});
+
+		const isDark = document.documentElement.getAttribute('data-theme')?.includes('dark') ||
+			window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+		const options: any = {
+			chart: {
+				type: 'line',
+				height: 420,
+				fontFamily: 'inherit',
+				background: 'transparent',
+				toolbar: { show: true, tools: { download: true, zoom: true, pan: true, reset: true } },
+				zoom: { enabled: true },
+				animations: { enabled: true, speed: 600 }
+			},
+			series,
+			xaxis: {
+				categories: weeks.map((w) => `Wk ${w}`),
+				title: { text: 'Week' },
+				labels: { style: { fontSize: '11px' } }
+			},
+			yaxis: {
+				title: { text: chartMode === 'cumulative' ? 'Cumulative Points' : 'Points' },
+				labels: {
+					formatter: (v: number) => v.toFixed(0)
+				}
+			},
+			stroke: {
+				width: chartMode === 'cumulative' ? 2.5 : 2,
+				curve: 'smooth'
+			},
+			colors: colors.slice(0, series.length),
+			legend: {
+				position: 'bottom',
+				fontSize: '11px',
+				markers: { size: 4 },
+				itemMargin: { horizontal: 8, vertical: 4 }
+			},
+			tooltip: {
+				shared: true,
+				intersect: false,
+				y: {
+					formatter: (v: number) => v.toFixed(1)
+				}
+			},
+			grid: {
+				strokeDashArray: 3,
+				borderColor: isDark ? '#374151' : '#e5e7eb'
+			},
+			theme: {
+				mode: isDark ? 'dark' : 'light'
+			},
+			markers: {
+				size: chartMode === 'weekly' ? 3 : 0,
+				hover: { size: 5 }
+			}
+		};
+
+		import('apexcharts').then(({ default: ApexCharts }) => {
+			chartInstance = new ApexCharts(chartContainer, options);
+			chartInstance.render();
+		});
+	}
+
+	function toggleChartMode() {
+		chartMode = chartMode === 'cumulative' ? 'weekly' : 'cumulative';
+		renderChart();
 	}
 
 	async function toggleRoster(team: FantasyTeam) {
@@ -69,7 +208,10 @@
 		}
 	}
 
-	onMount(loadLeague);
+	onMount(() => {
+		loadLeague();
+		loadMatchups();
+	});
 </script>
 
 {#if loading}
@@ -103,6 +245,43 @@
 			{/if}
 			<div><span class="font-semibold">External ID:</span> {league.external_league_id}</div>
 			<div><span class="font-semibold">Last Sync:</span> {new Date(league.updated_at).toLocaleString()}</div>
+		</div>
+	</div>
+
+	<!-- Weekly Scores Chart -->
+	<div class="card bg-base-100 shadow-sm mb-6">
+		<div class="card-body p-4">
+			<div class="flex items-center justify-between mb-2">
+				<h2 class="text-lg font-bold">📊 Season Scoring</h2>
+				<div class="flex gap-2 items-center">
+					{#if matchups.length > 0}
+						<button
+							class="btn btn-sm {chartMode === 'cumulative' ? 'btn-primary' : 'btn-ghost'}"
+							onclick={() => { chartMode = 'cumulative'; renderChart(); }}
+						>
+							Cumulative
+						</button>
+						<button
+							class="btn btn-sm {chartMode === 'weekly' ? 'btn-primary' : 'btn-ghost'}"
+							onclick={() => { chartMode = 'weekly'; renderChart(); }}
+						>
+							Weekly
+						</button>
+					{/if}
+				</div>
+			</div>
+			{#if matchupsLoading}
+				<div class="flex justify-center py-8">
+					<span class="loading loading-dots loading-md text-primary"></span>
+				</div>
+			{:else if matchups.length === 0}
+				<div class="text-center py-8 text-base-content/50">
+					<p>No weekly matchup data available.</p>
+					<p class="text-xs mt-1">Re-import this league to collect weekly scores.</p>
+				</div>
+			{:else}
+				<div bind:this={chartContainer}></div>
+			{/if}
 		</div>
 	</div>
 

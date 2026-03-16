@@ -90,3 +90,17 @@ type TeamDetail struct {
 	Team   Team          `json:"team"`
 	Roster []RosterEntry `json:"roster"`
 }
+
+// Matchup represents one team's result in a weekly head-to-head matchup.
+type Matchup struct {
+	ID             int     `json:"id"`
+	LeagueID       int     `json:"league_id"`
+	Week           int     `json:"week"`
+	MatchupID      int     `json:"matchup_id"`
+	TeamName       string  `json:"team_name"`
+	ExternalTeamID *string `json:"external_team_id,omitempty"`
+	Points         float64 `json:"points"`
+	Result         *string `json:"result,omitempty"`
+	IsPlayoff      bool    `json:"is_playoff"`
+	CreatedAt      string  `json:"created_at"`
+}

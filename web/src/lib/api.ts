@@ -829,6 +829,19 @@ export interface TeamDetail {
 	roster: FantasyRosterEntry[];
 }
 
+export interface FantasyMatchup {
+	id: number;
+	league_id: number;
+	week: number;
+	matchup_id: number;
+	team_name: string;
+	external_team_id?: string;
+	points: number;
+	result?: string;
+	is_playoff: boolean;
+	created_at: string;
+}
+
 export interface FantasyLeagueFilter {
 	platform?: string;
 	season?: number;
@@ -868,6 +881,10 @@ export function getFantasyLeague(id: number): Promise<LeagueDetail> {
 
 export function getFantasyTeam(id: number): Promise<TeamDetail> {
 	return get(`/fantasy/teams/${id}`);
+}
+
+export function getFantasyMatchups(leagueId: number): Promise<FantasyMatchup[]> {
+	return get(`/fantasy/leagues/${leagueId}/matchups`);
 }
 
 export function startFantasyImport(req: FantasyImportRequest): Promise<FantasyImportAccepted> {

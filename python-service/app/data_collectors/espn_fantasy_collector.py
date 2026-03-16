@@ -108,7 +108,7 @@ class ESPNFantasyCollector(DataCollector):
 
     async def fetch(self) -> Dict[str, Any]:
         """Hit the ESPN Fantasy API and return structured league data."""
-        self._progress(1, 4, {"step": "Connecting to ESPN API"})
+        self._progress(1, 5, {"step": "Connecting to ESPN API"})
 
         url = (
             f"{self.BASE_URL}/seasons/{self.season}"
@@ -134,7 +134,7 @@ class ESPNFantasyCollector(DataCollector):
                 url,
                 cookies=cookies,
                 headers=headers,
-                params={"view": ["mTeam", "mRoster", "mSettings"]},
+                params={"view": ["mTeam", "mRoster", "mSettings", "mMatchupScore"]},
             )
 
             logger.info("ESPN response: status=%d url=%s", resp.status_code, resp.url)
@@ -158,29 +158,34 @@ class ESPNFantasyCollector(DataCollector):
             resp.raise_for_status()
             data: Dict[str, Any] = resp.json()
 
-        self._progress(2, 4, {"step": "Processing league data"})
+        self._progress(2, 5, {"step": "Processing league data"})
         league_info = self._extract_league(data)
 
-        self._progress(3, 4, {"step": "Processing teams & rosters"})
+        self._progress(3, 5, {"step": "Processing teams & rosters"})
         members = {
             m["id"]: m.get("displayName", "Unknown")
             for m in data.get("members", [])
         }
         teams = self._extract_teams(data, members)
 
-        self._progress(4, 4, {"step": "Complete"})
+        self._progress(4, 5, {"step": "Processing weekly matchups"})
+        matchups = self._extract_matchups(data, teams)
+
+        self._progress(5, 5, {"step": "Complete"})
 
         total_players = sum(len(t.get("roster", [])) for t in teams)
         logger.info(
-            "Fetched ESPN league '%s': %d teams, %d roster entries",
+            "Fetched ESPN league '%s': %d teams, %d roster entries, %d matchup rows",
             league_info.get("league_name", "?"),
             len(teams),
             total_players,
+            len(matchups),
         )
 
         return {
             "league": league_info,
             "teams": teams,
+            "matchups": matchups,
             "platform": "espn",
             "season": self.season,
             "total_players": total_players,
@@ -305,6 +310,92 @@ class ESPNFantasyCollector(DataCollector):
             team["standing_rank"] = rank
 
         return teams
+
+    def _extract_matchups(
+        self,
+        raw: Dict[str, Any],
+        teams: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Extract weekly matchup scores from the ESPN schedule data.
+
+        The ``mMatchupScore`` view populates ``raw["schedule"]`` with
+        matchup entries.  Each entry has ``matchupPeriodId`` (week),
+        ``home`` / ``away`` team dicts with ``teamId`` and
+        ``totalPoints``.
+        """
+        # team_id → team_name lookup
+        team_lookup = {t["team_key"]: t["team_name"] for t in teams}
+
+        schedule = raw.get("schedule", [])
+        if not isinstance(schedule, list):
+            return []
+
+        # Determine playoff start from settings
+        settings = raw.get("settings", {})
+        sched_settings = settings.get("scheduleSettings", {})
+        matchup_periods = sched_settings.get("matchupPeriodCount", 14)
+        playoff_start = matchup_periods + 1  # approximate; regular season count
+
+        matchups: List[Dict[str, Any]] = []
+        for entry in schedule:
+            if not isinstance(entry, dict):
+                continue
+
+            week = entry.get("matchupPeriodId", 0)
+            matchup_id_raw = entry.get("id", 0)
+            is_playoff = entry.get("playoffTierType", "NONE") != "NONE"
+
+            home = entry.get("home", {}) or {}
+            away = entry.get("away", {}) or {}
+
+            home_id = str(home.get("teamId", ""))
+            away_id = str(away.get("teamId", ""))
+
+            home_pts = float(home.get("totalPoints", 0) or 0)
+            away_pts = float(away.get("totalPoints", 0) or 0)
+
+            # Skip unplayed matchups (both 0 usually means not yet played)
+            if home_pts == 0 and away_pts == 0:
+                # Check if there's a non-zero rosterForCurrentScoringPeriod
+                # If truly 0-0, skip it
+                if not home.get("rosterForCurrentScoringPeriod"):
+                    continue
+
+            # Determine results
+            if home_pts > away_pts:
+                home_result, away_result = "W", "L"
+            elif away_pts > home_pts:
+                home_result, away_result = "L", "W"
+            else:
+                home_result = away_result = "T"
+
+            # Matchup index within the week
+            matchup_idx = matchup_id_raw
+
+            if home_id:
+                matchups.append({
+                    "week": week,
+                    "matchup_id": matchup_idx,
+                    "team_name": team_lookup.get(home_id, f"Team {home_id}"),
+                    "external_team_id": home_id,
+                    "points": home_pts,
+                    "result": home_result,
+                    "is_playoff": is_playoff,
+                })
+
+            if away_id:
+                matchups.append({
+                    "week": week,
+                    "matchup_id": matchup_idx,
+                    "team_name": team_lookup.get(away_id, f"Team {away_id}"),
+                    "external_team_id": away_id,
+                    "points": away_pts,
+                    "result": away_result,
+                    "is_playoff": is_playoff,
+                })
+
+        logger.info("Extracted %d matchup rows from ESPN schedule", len(matchups))
+        return matchups
 
 
 # Auto-register with the factory
