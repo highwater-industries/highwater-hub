@@ -1,6 +1,6 @@
-# ffredux
+# Highwater Hub
 
-A multi-service fantasy football platform built with Go, Python, and SvelteKit.
+A multi-service home platform built with Go, Python, and SvelteKit. Covers fantasy football data, NFL stats, fitness tracking, media server management, and more.
 
 ## Architecture
 
@@ -17,23 +17,26 @@ The Go server is the primary API and serves the SvelteKit SPA (embedded in the b
 ## Project Structure
 
 ```
-ffredux/
+highwater-hub/
 ├── cmd/
 │   ├── server/              # Go HTTP server entry point
 │   └── cli/                 # Go CLI tool entry point
 ├── internal/
 │   ├── server/              # HTTP server, routes, middleware
 │   ├── frontend/            # Embedded SvelteKit SPA (build output)
-│   ├── jobs/                # Import job management (client, handlers, store)
+│   ├── jobs/                # Import job management (client, handlers, store, inventory/audit)
 │   ├── nflstats/            # NFL data queries (players, stats, games, rankings)
+│   ├── fitness/             # Fitness tracking (workouts, exercises, sets, bodyweight, progress)
+│   ├── fantasy/             # Fantasy league data (leagues, teams, matchups)
 │   ├── user/                # User domain model
 │   └── httputil/            # HTTP response helpers
 ├── web/                     # SvelteKit frontend source
 │   ├── src/
-│   │   ├── routes/          # Pages: Home Base, Players, Jobs
+│   │   ├── routes/          # Pages: Dashboard, Players, Stats, Games, Rankings, Fitness, Leagues, Media, Data
 │   │   └── lib/
 │   │       ├── api.ts       # Typed API client
-│   │       └── constants.ts # Teams, positions, collector types
+│   │       ├── components/  # Shared UI components (PageHeader, StatCard, PlayerSeasonChart, …)
+│   │       └── constants.ts # Teams, positions, collector types, seasons
 │   ├── svelte.config.js     # adapter-static (SPA mode)
 │   └── vite.config.ts       # Dev proxy to Go server
 ├── python-service/
@@ -41,7 +44,7 @@ ffredux/
 │   │   ├── main.py          # FastAPI entry point
 │   │   ├── celery_app.py    # Celery configuration
 │   │   ├── tasks/           # Async import tasks (dispatch + persistence)
-│   │   ├── data_collectors/ # Data source adapters (rosters, stats, schedules, rankings)
+│   │   ├── data_collectors/ # Data source adapters (rosters, stats, schedules, rankings, Yahoo/ESPN fantasy)
 │   │   ├── routes/          # API route handlers
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── schemas/         # Pydantic request/response schemas
@@ -96,18 +99,54 @@ Primary backend API and UI host. Serves the SvelteKit SPA and all API endpoints.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | SvelteKit UI (Home Base, Players, Jobs) |
+| `GET` | `/` | SvelteKit UI |
 | `GET` | `/api/health` | Health check |
 | `GET` | `/api/nflstats/players` | List players (filterable, paginated) |
 | `GET` | `/api/nflstats/players/{id}` | Get a single player |
+| `GET` | `/api/nflstats/players/{id}/summary` | Career/season summary for a player |
 | `GET` | `/api/nflstats/stats` | List player stats (filterable, paginated) |
 | `GET` | `/api/nflstats/leaders` | Stat leaderboards (top N by any stat) |
 | `GET` | `/api/nflstats/games` | List games/schedules (filterable, paginated) |
 | `GET` | `/api/nflstats/games/{game_id}` | Get a single game |
 | `GET` | `/api/nflstats/rankings` | List fantasy rankings (filterable, paginated) |
 | `POST` | `/api/jobs/import` | Start an NFL stats import |
+| `POST` | `/api/jobs/import/batch` | Start a batch of NFL stats imports |
 | `GET` | `/api/jobs/{job_id}` | Check import job status |
 | `GET` | `/api/jobs` | List import history |
+| `GET` | `/api/jobs/summary` | Aggregate job summary stats |
+| `POST` | `/api/jobs/{id}/abort` | Abort a running job |
+| `POST` | `/api/jobs/abort-all` | Abort all running jobs |
+| `POST` | `/api/jobs/cleanup` | Clean up stuck jobs |
+| `GET` | `/api/data/inventory` | Data inventory (record counts by type/season) |
+| `GET` | `/api/data/audit` | Run a data audit |
+| `GET` | `/api/fitness/users` | List fitness users |
+| `POST` | `/api/fitness/users` | Create a fitness user |
+| `GET` | `/api/fitness/workouts` | List workouts |
+| `POST` | `/api/fitness/workouts` | Create a workout |
+| `GET` | `/api/fitness/workouts/{id}` | Get a workout |
+| `DELETE` | `/api/fitness/workouts/{id}` | Delete a workout |
+| `PUT` | `/api/fitness/workouts/{id}/complete` | Mark workout complete |
+| `PUT` | `/api/fitness/workouts/{id}/meta` | Update workout metadata |
+| `POST` | `/api/fitness/workouts/{id}/exercises` | Add exercise to workout |
+| `GET` | `/api/fitness/exercises` | List exercises |
+| `POST` | `/api/fitness/exercises` | Create exercise |
+| `GET` | `/api/fitness/exercises/{id}/history` | Exercise history for a user |
+| `POST` | `/api/fitness/exercises/{id}/favorite` | Toggle exercise favorite |
+| `PUT` | `/api/fitness/workout-exercises/{id}` | Update workout exercise |
+| `DELETE` | `/api/fitness/workout-exercises/{id}` | Remove exercise from workout |
+| `POST` | `/api/fitness/workout-exercises/{id}/sets` | Add a set |
+| `PUT` | `/api/fitness/sets/{id}` | Update a set |
+| `DELETE` | `/api/fitness/sets/{id}` | Delete a set |
+| `GET` | `/api/fitness/bodyweight` | List bodyweight history |
+| `GET` | `/api/fitness/bodyweight/latest` | Get latest bodyweight entry |
+| `POST` | `/api/fitness/bodyweight` | Log a bodyweight entry |
+| `DELETE` | `/api/fitness/bodyweight/{id}` | Delete a bodyweight entry |
+| `GET` | `/api/fitness/progress` | User progress cards (per-exercise PRs, trend) |
+| `POST` | `/api/fantasy/import` | Start a fantasy league import |
+| `GET` | `/api/fantasy/leagues` | List fantasy leagues |
+| `GET` | `/api/fantasy/leagues/{id}` | Get league detail (teams, standings) |
+| `GET` | `/api/fantasy/leagues/{id}/matchups` | Get weekly matchup scores |
+| `GET` | `/api/fantasy/teams/{id}` | Get team detail and roster |
 
 **Player query parameters:**
 
@@ -166,6 +205,7 @@ Data import service. Called by the Go server to dispatch async imports.
 - `GET /health` — Health check
 - `POST /api/v1/nflstats/import` — Start an NFL stats import job
 - `GET /api/v1/nflstats/jobs/{job_id}` — Check job status
+- `POST /api/v1/fantasy/import` — Start a fantasy league import (Yahoo or ESPN)
 
 ### RabbitMQ Management (port 15672)
 
@@ -183,6 +223,8 @@ The Python service provides an async import pipeline for NFL data powered by [nf
 | `nflreadpy_stats` | Player Stats | `load_player_stats()` | Passing, rushing, receiving, and fantasy stats (weekly or seasonal) |
 | `nflreadpy_schedules` | Schedules | `load_schedules()` | Game results, scores, spread, stadium info |
 | `nflreadpy_ff_rankings` | Fantasy Rankings | `load_ff_rankings()` | FantasyPros ECR rankings (draft, weekly, or all) |
+| `yahoo_fantasy` | Fantasy League (Yahoo) | Yahoo Fantasy API | League info, teams, rosters, weekly matchup scores |
+| `espn_fantasy` | Fantasy League (ESPN) | ESPN Fantasy API | League info, teams, rosters, weekly matchup scores |
 
 ### Starting an import
 
@@ -302,6 +344,16 @@ Tables are auto-created on startup by both the FastAPI server and the Celery wor
 | `games` | Game schedules and results (scores, spread, stadium, overtime) |
 | `fantasy_rankings` | FantasyPros consensus rankings (ECR, standard deviation, best/worst) |
 | `collection_history` | Audit log of every import run (counts, status, timing, params) |
+| `fantasy_leagues` | Fantasy league metadata (platform, name, season, scoring type) |
+| `fantasy_teams` | Fantasy team info (name, owner, record, standings, points) |
+| `fantasy_matchups` | Weekly matchup results (team, week, points scored) |
+| `fantasy_roster_entries` | Roster snapshots per team per week |
+| `fitness_users` | Fitness tracker users |
+| `exercises` | Exercise library (name, category, muscle group) |
+| `workouts` | Workout sessions (date, user, completion status) |
+| `workout_exercises` | Exercises within a workout session |
+| `workout_sets` | Individual sets (reps, weight, RPE) |
+| `bodyweight_log` | Bodyweight entries (date, weight, notes) |
 
 ### Running the Celery worker locally
 
@@ -321,11 +373,36 @@ The UI is a SvelteKit SPA in the `web/` directory with a retro pixel "Highwater 
 
 | Route | Page | Description |
 |-------|------|-------------|
-| `/` | Home Base | Service launcher grid — links to Plex, Radarr, Sonarr, and other services |
-| `/players` | Players | Filterable, paginated roster browser with team/position/search dropdowns |
-| `/jobs` | Jobs | Import dashboard — stats cards, data type selector, job history table |
+| `/` | Dashboard | Quick-launch card grid for all sections |
+| `/players` | NFL Players | Filterable, paginated roster browser with team/position/search dropdowns; links to individual player detail pages |
+| `/players/{id}` | Player Detail | Career stats, season-by-season breakdown, fantasy ranking history, and a scoring trend chart |
+| `/stats` | NFL Stats | Browsable stat lines with filters for team, position, season, week, stat type, and season type; toggle between weekly and season totals; stat leaderboard mode |
+| `/games` | NFL Games | Game schedules and results with filters for team, season, and week |
+| `/rankings` | Fantasy Rankings | FantasyPros ECR rankings with filters for rank type, position, team, season, and week |
+| `/fitness` | Fitness | Workout log — create and manage workouts, log sets per exercise, track bodyweight |
+| `/fitness/progress` | Fitness Progress | Per-exercise progress cards with PR history and trend charts (powered by ApexCharts) |
+| `/fitness/workout/{id}` | Workout Detail | Full workout view with set-by-set logging and RPE tracking |
+| `/leagues` | Fantasy Leagues | Overview of all imported fantasy leagues grouped by league name; season selector, standings table, scoring chart (cumulative or weekly) |
+| `/leagues/{id}` | League Detail | Full team roster, standings, and weekly matchup scoring chart for a specific season |
+| `/media` | Media | Quick-launch links for the local media stack (Plex, Sonarr, Radarr, Overseerr, Prowlarr, SABnzbd, Tautulli) and infrastructure services (Uptime Kuma, Scrutiny, RabbitMQ, Postgres) |
+| `/data` | Data Management | Data import pipeline — run imports by type, batch imports, view job history, and inspect data inventory and audit |
 
-The Jobs page supports importing four data types (Rosters, Player Stats, Schedules, Fantasy Rankings) with type-specific options like summary level and ranking type.
+### Screenshots
+
+> Screenshots will be added here.
+
+<!-- Dashboard -->
+<!-- NFL Players -->
+<!-- Player Detail -->
+<!-- NFL Stats -->
+<!-- NFL Games -->
+<!-- Fantasy Rankings -->
+<!-- Fitness -->
+<!-- Fitness Progress -->
+<!-- Fantasy Leagues -->
+<!-- League Detail -->
+<!-- Media -->
+<!-- Data Management -->
 
 ### Dev mode (hot reload)
 
@@ -354,4 +431,6 @@ cd .. && go build ./cmd/server   # binary now includes the SPA
 - **SvelteKit** with TypeScript
 - **adapter-static** — SPA mode, all routes fall back to `index.html`
 - **Vite** — dev server with API proxy
+- **ApexCharts** — interactive charts (fitness progress, fantasy scoring trends)
+- **DaisyUI + Tailwind CSS** — component library and utility styles
 - **Go embed.FS** — static files baked into the binary at compile time
