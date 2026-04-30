@@ -389,20 +389,25 @@ The UI is a SvelteKit SPA in the `web/` directory with a retro pixel "Highwater 
 
 ### Screenshots
 
-> Screenshots will be added here.
-
 <!-- Dashboard -->
 <!-- NFL Players -->
+<img width="1852" height="806" alt="nfl-players" src="https://github.com/user-attachments/assets/1dd9b1a4-af8e-4727-9deb-ad0495c558fa" />
 <!-- Player Detail -->
 <!-- NFL Stats -->
+<img width="1888" height="803" alt="nfl-player-stats" src="https://github.com/user-attachments/assets/8a00f311-a195-49c0-b69a-7ae32136dfe8" />
 <!-- NFL Games -->
 <!-- Fantasy Rankings -->
 <!-- Fitness -->
+<img width="1903" height="764" alt="completed-workouts" src="https://github.com/user-attachments/assets/2824f84e-1c1d-4b58-8e81-3498ac25e077" />
 <!-- Fitness Progress -->
+<img width="1889" height="779" alt="exercise-progress" src="https://github.com/user-attachments/assets/6087342a-a28d-461d-85f2-451652166baf" />
 <!-- Fantasy Leagues -->
+<img width="1876" height="865" alt="leagues" src="https://github.com/user-attachments/assets/7c7eb0ac-2c93-46ce-becc-e1cafcd36d99" />
+
 <!-- League Detail -->
 <!-- Media -->
 <!-- Data Management -->
+<img width="1871" height="836" alt="data-mgmt" src="https://github.com/user-attachments/assets/3bd63855-6ebe-4e0e-8355-30a67ab0432e" />
 
 ### Dev mode (hot reload)
 
